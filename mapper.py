@@ -10,12 +10,6 @@ import re
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
-# default settings
-refpath = 'data/HCV_REF_2012_genome'
-bowtie_threads = 2
-min_match_len = 50
-min_mapq = 10
-
 
 def is_first_read(flag):
     """
@@ -33,13 +27,13 @@ def count_file_lines(path):
     return int(wc_output.split()[0])
 
 
-def map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq):
+def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
     """
     # get size of FASTQ
-    nrecords = count_file_lines(args.fastq1) / 4
+    nrecords = count_file_lines(fastq1) / 4
     
     # stream output from bowtie2
     bowtie_args = ['bowtie2',
@@ -88,7 +82,7 @@ def map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq):
             
             # ignore reads whose mate mapped to a different reference
             if rnext != '=':
-                print rname, rnext
+                #print rname, rnext
                 n_hybrid += 1
                 continue
                 
@@ -108,13 +102,9 @@ def map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq):
     # output results
     keys = counts.keys()
     keys.sort()
-    
-    for subtype in keys:
-        print subtype, counts[subtype]
 
-    print 'too short', n_short
-    print 'low mapq', n_mapq
-    print 'mates mapped to different subtype', n_hybrid
+    return counts, n_short, n_mapq, n_hybrid
+
 
 
 def main():
@@ -123,11 +113,11 @@ def main():
     
     parser.add_argument('fastq1', help='<input> FASTQ containing forward reads')
     parser.add_argument('fastq2', help='<input> FASTQ containing reverse reads')
-    parser.add_argument('-x', help='path to bowtie2 index (.bt2)', default=refpath)
-    parser.add_argument('-p', type=int, help='number of bowtie2 threads', default=bowtie_threads)
-    parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=min_match_len)
-    parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=min_mapq)
-    
+    parser.add_argument('-x', help='path to bowtie2 index (.bt2)', default='data/HCV_REF_2012_genome')
+    parser.add_argument('-p', type=int, help='number of bowtie2 threads', default=6)
+    parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=50)
+    parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=10)
+
     args = parser.parse_args()
     
     # check that we have access to bowtie2
@@ -145,8 +135,13 @@ def main():
         print('No FASTQ found at %s', args.fastq2)
         sys.exit(1)
     
-    map(args.fastq1, args.fastq2, )
+    counts, n_short, n_mapq, n_hybrid = do_map(args.fastq1, args.fastq2, args.x, args.p, args.minlen, args.minq)
+    for subtype in keys:
+        print subtype, counts[subtype]
 
+    print 'too short', n_short
+    print 'low mapq', n_mapq
+    print 'mates mapped to different subtype', n_hybrid
 
 
 if __name__ == '__main__':

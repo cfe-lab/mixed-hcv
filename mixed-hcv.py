@@ -12,6 +12,8 @@ from settings import *
 
 import subprocess
 import re
+import time
+
 
 
 class App:
@@ -106,6 +108,7 @@ class App:
         #atexit.register(p.terminate)
 
         # collect SAM output by refname
+        genotype_counts = dict([(str(i+1), 0) for i in range(7)])
         counts = {}
         n_short = 0
         n_hybrid = 0
@@ -122,18 +125,22 @@ class App:
 
                 qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = line.split('\t')[:11]
                 progress += 1
-                if progress % 1000 == 0:
+                if progress % progress_update_interval == 0:
                     self.progress_bar['value'] = progress
-                    #self.console.insert(tk.END, '%d/%d reads, mapped %d\n' % (progress, nrecords, total_count))
+                    #self.console.insert(tk.END, '| 1: %d | 2: %d | 3: %d | 4: %d | 5: %d | 6: %d '
+                    #                            '| 7: %d |\n' % (genotype_counts['1'],
+                    #                                             genotype_counts['2'], genotype_counts['3'],
+                    #                                             genotype_counts['4'], genotype_counts['5'],
+                    #                                             genotype_counts['6'], genotype_counts['7']))
                     self.master.update_idletasks()
                     #self.console.see(tk.END)
 
+                # read failed to map to anything
                 if rname == '*':
                     continue
 
-                subtype = rname.split('-')[-1]  # 'HCV-1a' -> '1a'
-                if subtype not in counts:
-                    counts.update({subtype: 0})
+                subtype = rname.split('-')[1]  # 'HCV-1a-[accno]' -> '1a'
+                genotype = subtype[0]
 
                 # ignore second reads
                 if not self.is_first_read(flag):
@@ -158,7 +165,11 @@ class App:
                     n_short += 1
                     continue
 
+                # update counts
+                if subtype not in counts:
+                    counts.update({subtype: 0})
                 counts[subtype] += 1
+                genotype_counts[genotype] += 1
                 total_count += 1
 
             if p.returncode:
@@ -212,6 +223,7 @@ class App:
         self.master.update_idletasks()
 
         # okay to process
+        t0 = time.time()
         try:
             counts, total_count, total_mapped, n_short, n_mapq, n_hybrid = self.do_map(self.fastq1, self.fastq2,
                                                                                        refpath, bowtie_threads,
@@ -219,10 +231,12 @@ class App:
         except Exception, e:
             self.console.insert(tk.END, 'ERROR: %s\n' % e)
             self.console.see(tk.END)
+        elapsed = time.time() - t0
 
         # spool output to console
-        self.console.insert(tk.END, 'Total number of reads: %d\n' % total_count)
-        self.console.insert(tk.END, 'Total reads mapped: %d\n' % total_mapped)
+        self.console.insert(tk.END, '===========================\n')
+        self.console.insert(tk.END, 'Total number of pairs: %d\n' % (int(total_count)/2,))
+        self.console.insert(tk.END, 'Total pairs mapped: %d\n' % total_mapped)
         self.console.insert(tk.END, '-------------------------\n')
 
         keys = counts.keys()
@@ -235,7 +249,7 @@ class App:
         self.console.insert(tk.END, 'Reads too short: %d\n' % n_short)
         self.console.insert(tk.END, 'Low map quality: %d\n' % n_mapq)
         self.console.insert(tk.END, 'Discordant pair mapping: %d\n' % n_hybrid)
-        self.console.insert(tk.END, '===========================\nDONE\n\n')
+        self.console.insert(tk.END, '===========================\nDONE - running time %d seconds\n\n' % elapsed)
         self.console.see(tk.END)
 
 

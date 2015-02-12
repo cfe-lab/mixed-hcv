@@ -7,9 +7,10 @@ a = Analysis(['mixed-hcv.py'],
              hookspath=None,
              runtime_hooks=None)
 
-files = glob('data/*.bt2')
-for file in files:
-    a.datas += [(file, file, 'DATA')]
+#files = glob('data/*.bt2')
+#for file in files:
+#    print file
+#    a.datas += [(file, file, 'DATA')]
 
 pyz = PYZ(a.pure)
 exe = EXE(pyz,
@@ -21,4 +22,5 @@ exe = EXE(pyz,
           debug=False,
           strip=None,
           upx=True,
-          console=True )
+          console=True,
+          icon='res/mixer.icns')

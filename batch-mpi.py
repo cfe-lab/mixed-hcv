@@ -193,13 +193,13 @@ def main():
             filename = os.path.basename(f1)
             if filename.startswith('Undetermined'):
                 continue
-            
+
             sample, snum = filename.split('_')[:2]
-            
+
             if (runname, sample, snum) in complete:
                 # skip previously processed sample
                 continue
-                
+
             logfile = open(args.log+'.'+str(my_rank), 'a')
             logfile.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
             logfile.close()
@@ -224,4 +224,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

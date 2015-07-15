@@ -165,8 +165,8 @@ def main():
     handle.write('runname,sample,snum,subtype,count,total\n')
     
     for pindex, path in enumerate(paths):
-        if pindex % nprocs != my_rank:
-            continue
+        #if pindex % nprocs != my_rank:
+        #    continue
         
         # check that the inputs exist
         if not os.path.exists(path):
@@ -176,6 +176,7 @@ def main():
         if not path.endswith('/'):
             path += '/'
 
+        # get a list of all FASTQ R1 files in this folder
         files = glob(path + '*_R1_001.fastq')
         if len(files) == 0:
             print 'ERROR: No FASTQ R1 files found at', path
@@ -183,7 +184,11 @@ def main():
    
         runname = path.split('/')[3]
 
-        for f1 in files:
+        for i, f1 in enumerate(files):
+            # distribute across nodes
+            if i % nprocs != my_rank:
+                continue
+
             f2 = f1.replace('_R1_', '_R2_')
             filename = os.path.basename(f1)
             if filename.startswith('Undetermined'):
@@ -209,7 +214,6 @@ def main():
             # record number of reads that failed to map
             handle.write('%s,%s,%s,,%d,%d\n' % (runname, sample, snum, n_discard, total_count))
             handle.flush()  # clear write buffer
-            
             logfile = open(args.log+'.'+str(my_rank), 'a')
             logfile.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
             logfile.close()
@@ -220,3 +224,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

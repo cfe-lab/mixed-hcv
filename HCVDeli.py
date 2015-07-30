@@ -22,6 +22,7 @@ class HCVDeli():
         self.targets = {'NS5a': [(0, 250)], 'NS5b': [(100, 350), (600, 850)], 'NS3': [(700, 950)]}
         self.min_overlap = 250
 
+        self.p = None  # this will be assigned the bowtie2 process
         self.refpath = x
         self.bowtie_threads = p
         self.min_match_len = minlen
@@ -36,6 +37,9 @@ class HCVDeli():
             if rname not in self.coords:
                 self.coords.update({rname: {}})
             self.coords[rname].update({gene: (int(left), int(right))})
+
+    def __del__(self):
+        self.p.terminate()  # close down bowtie2, esp. in case of Python exiting
 
     def timestamp(self, msg):
         return '[%s] %s' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
@@ -142,6 +146,7 @@ class HCVDeli():
                 mseq += c2 if (q2 > q_cutoff) else 'N'
         return mseq
 
+
     def align(self, fastq1, fastq2):
         """
         Process SAM output as it is streamed from bowtie2 to assign
@@ -162,14 +167,14 @@ class HCVDeli():
                        '--local',
                        '-p', str(self.bowtie_threads)]
 
-        p = subprocess.Popen(bowtie_args, stdout=subprocess.PIPE)
+        self.p = subprocess.Popen(bowtie_args, stdout=subprocess.PIPE)
 
         progress = 0
         read_cache = {}
         aligned = {}
         # stream bowtie2 output, gather and merge reads
-        with p.stdout:
-            for line in p.stdout:
+        with self.p.stdout:
+            for line in self.p.stdout:
                 if line.startswith('@'):
                     # skip header line
                     continue
@@ -177,6 +182,10 @@ class HCVDeli():
                 progress += 1
                 if progress % 5000 == 0:
                     print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
+
+                # FIXME: DEBUGGING
+                #if progress > 100000:
+                #    break
 
                 items = line.split('\t')
                 qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
@@ -201,8 +210,8 @@ class HCVDeli():
                     aligned.update({key: 0})
                 aligned[key] += 1
 
-            if p.returncode:
-                raise subprocess.CalledProcessError(p.returncode, bowtie_args)
+            if self.p.returncode:
+                raise subprocess.CalledProcessError(self.p.returncode, bowtie_args)
 
         return aligned
 
@@ -215,22 +224,11 @@ class HCVDeli():
         :param aligned:
         :return:
         """
-        counts = {}
         slices = {}
         for (mseq, rname, pos), count in aligned.iteritems():
-            coords = self.coords[rname]
-            subtype = rname.split('-')[1]  # 'HCV-1a' -> '1a'
-            genotype = subtype[0]
-
-            # update counts
-            if subtype not in counts:
-                counts.update({subtype: 0})
-            counts[subtype] += 1
-
             # check where this read mapped
             read_start = int(pos)
             read_end = read_start + len(mseq.strip('-'))
-
             coords = self.coords[rname]
             if read_end < coords['Core'][0] or read_start > coords['NS5b'][1]:
                 # read falls outside of ORF
@@ -255,9 +253,9 @@ class HCVDeli():
                         continue
 
                     slice = mseq[genome_left:genome_right]
-                    slices[target_gene][tc].append((slice, count))
+                    slices[target_gene][tc].append((rname, slice, count))
 
-        return slices, counts
+        return slices
 
 
     def run(self, f1, f2, handle, log, runname='', complete=[]):
@@ -286,16 +284,17 @@ class HCVDeli():
         logfile.close()
 
         aligned = self.align(f1, f2)
-        slices, _ = self.slice(aligned)
+        slices = self.slice(aligned)
         # write out to file
         for gene, subsets in slices.iteritems():
             for coords, subset in subsets.iteritems():
                 left, right = coords
-                intermed = [(count, seq) for seq, count in subset]
+                intermed = [(count, rname, seq) for rname, seq, count in subset]
                 intermed.sort(reverse=True)
-                for rank, (count, seq) in enumerate(intermed):
-                    handle.write('%s,%s,%s,%s,%d,%d,%d,%d,%s\n' % (runname, sample, snum, gene,
-                                                                   left, right, rank+1, count, seq))
+                for rank, (count, rname, seq) in enumerate(intermed):
+                    subtype = rname.split('-')[1]
+                    handle.write('%s,%s,%s,%s,%d,%d,%d,%d,%s,%s\n' % (runname, sample, snum, gene,
+                                                                   left, right, rank+1, count, subtype, seq))
                     handle.flush()  # make sure we write intact lines
 
         logfile = open(log, 'a')
@@ -327,7 +326,7 @@ class HCVDeli():
         else:
             # new output file
             handle = open(output, 'w')
-            handle.write('runname,sample,snum,gene,start,end,rank,count,seq\n')
+            handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,seq\n')
 
         for path in paths:
             # check that the inputs exist
@@ -394,7 +393,7 @@ def main():
     elif args.R1:
         # no continuation of run for single file mode!
         handle = open(args.output, 'w')
-        handle.write('runname,sample,snum,gene,start,end,rank,count,seq\n')
+        handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,seq\n')
         deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log)
         handle.close()
     else:

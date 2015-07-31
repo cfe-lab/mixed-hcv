@@ -177,7 +177,7 @@ def main():
             path += '/'
 
         # get a list of all FASTQ R1 files in this folder
-        files = glob(path + '*_R1_001.fastq')
+        files = glob(path + '*_R1_001.fastq.gz')
         if len(files) == 0:
             print 'ERROR: No FASTQ R1 files found at', path
             sys.exit()

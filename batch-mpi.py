@@ -34,13 +34,28 @@ def count_file_lines(path):
     return int(wc_output.split()[0])
 
 
+def count_zipped_file_lines(path):
+    """ Run the wc command to count lines in a gzipped file, as shown here:
+    https://gist.github.com/zed/0ac760859e614cd03652
+    http://stackoverflow.com/questions/4846891/python-piping-output-between-two-subprocesses
+    http://superuser.com/questions/135329/count-lines-in-a-compressed-file
+    """
+    unzipped_pipe = subprocess.Popen(['zcat', path], stdout=subprocess.PIPE)
+    wc_process = subprocess.Popen(['wc', '-l'], stdin=unzipped_pipe.stdout, stdout=subprocess.PIPE)
+    unzipped_pipe.stdout.close() # enable write error in zcat if wc dies
+    wc_out, wc_err = wc_process.communicate()
+
+    return int(wc_out.split()[0])
+
+
 def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
+    Assumes that fastq1 and fastq1 are gzipped fastq files.
     """
     # get size of FASTQ
-    nrecords = count_file_lines(fastq1) / 2
+    nrecords = count_zipped_file_lines(fastq1) / 2
     
     # stream output from bowtie2
     bowtie_args = ['bowtie2',
@@ -128,7 +143,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Map contents of FASTQ R1 and R2 data sets to references using bowtie2.')
     
-    parser.add_argument('-path', help='<input> folder containing FASTQ files')
+    parser.add_argument('-path', help='<input> folder containing gzipped FASTQ files.  Assumes that parent dir of fastq.gz files is the runname')
     parser.add_argument('-pathlist', help='<input> file containing list of folders')
     parser.add_argument('-output', help='<output CSV> file to write results')
     parser.add_argument('-log', help='path to logfile', default='mixed-hcv.batch.log')
@@ -162,8 +177,8 @@ def main():
     complete = {}
     # new output file
     handle = open(args.output+'.'+str(my_rank), 'w')
-    handle.write('runname,sample,snum,subtype,count,total\n')
-    
+    handle.write('runname,sample,snum,subtype,count,total,perc\n')
+    logfile = None
     for pindex, path in enumerate(paths):
         #if pindex % nprocs != my_rank:
         #    continue
@@ -181,8 +196,9 @@ def main():
         if len(files) == 0:
             print 'ERROR: No FASTQ R1 files found at', path
             sys.exit()
-   
-        runname = path.split('/')[3]
+
+
+        runname = os.path.basename(os.path.dirname(os.path.abspath(files[0])))
 
         for i, f1 in enumerate(files):
             # distribute across nodes
@@ -208,18 +224,25 @@ def main():
             n_discard = n_short + n_mapq + n_hybrid
             total_count = sum(counts.values()) + n_discard
 
+
             for subtype, count in counts.iteritems():
-                handle.write('%s,%s,%s,%s,%d,%d\n' % (runname, sample, snum, subtype, count, total_count))
+                if total_count:
+                    perc = count*100/float(total_count)
+                    handle.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
 
             # record number of reads that failed to map
-            handle.write('%s,%s,%s,,%d,%d\n' % (runname, sample, snum, n_discard, total_count))
+            if total_count:
+                discard_perc = n_discard*100/float(total_count)
+                handle.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, discard_perc))
+
             handle.flush()  # clear write buffer
             logfile = open(args.log+'.'+str(my_rank), 'a')
             logfile.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
             logfile.close()
             
     handle.close()
-    logfile.close()
+    if logfile:
+        logfile.close()
 
 
 if __name__ == '__main__':

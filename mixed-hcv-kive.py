@@ -15,8 +15,8 @@ import subprocess
 import re
 import bowtie2
 
-bowtie2_version = '2.2.3'
-refpath='gb-ref.fa'  # CodeResource will get written to pwd
+bowtie2_version = '2.2.1'
+refpath='gb-ref_hg38.fa'  # CodeResource will get written to pwd
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
 
@@ -42,11 +42,11 @@ def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_sc
     short reads to HCV genotypes/subtypes.
     """
     counts = {}
-    rejects = {'mapq': 0, 'hybrid': 0, 'low score': 0, 'short': 0}
+    rejects = {'unknown': 0, 'mapq': 0, 'hybrid': 0, 'low score': 0, 'short': 0}
     total_count = 0
 
     # stream STDOUT from bowtie2
-    bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads)
+    bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=['--quiet', '--local'])
 
     for line in bowtie2_iter:
         if line.startswith('@'):
@@ -55,12 +55,24 @@ def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_sc
 
         items = line.split('\t')
         qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
-
-        subtype = rname.split('-')[1]  # 'HCV-1a' -> '1a'
-        genotype = subtype[0]
-
+        
         # ignore second reads
         if not is_first_read(flag):
+            continue
+            
+        if rname == '*':
+            rejects['unknown'] += 1
+            continue
+        
+        if rname.startswith('HCV'):
+            subtype = rname.split('-')[1]  # 'HCV-1a' -> '1a'
+            genotype = subtype[0]
+        elif rname.startswith('hg38'):
+            # mapped to human chromosome
+            subtype = rname
+            genotype = ''
+        else:
+            rejects['unknown'] += 1
             continue
 
         # discard reads with low map quality
@@ -70,7 +82,8 @@ def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_sc
             continue
 
         # ignore reads whose mate mapped to a different genotype
-        if rnext != '=' and genotype != rnext.split('-')[1][0]:
+        mate_genotype = rnext.split('-')[1][0] if '-' in rnext else ''
+        if rnext != '=' and genotype != mate_genotype:
             rejects['hybrid'] += 1
             continue
 
@@ -111,9 +124,12 @@ def mixed_hcv(fastq1, fastq2, outpath, n_threads=4):
     :param n_threads: Number of bowtie2 threads to run
     :return:
     """
-    # generate index files
-    bowtie2.build(bowtie2_version, refpath)
-
+    # check if index files exist
+    extensions = ['.1.bt2', '.2.bt2', '.3.bt2', '.4.bt2', '.rev.1.bt2', '.rev.2.bt2']
+    if not all([os.path.exists(refpath+ext) for ext in extensions]):
+        # generate index files
+        bowtie2.build(bowtie2_version, refpath)
+    
     # new output file
     outpath.write('subtype,count,total\n')
 

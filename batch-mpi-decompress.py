@@ -167,7 +167,7 @@ def main():
     complete = {}
     # new output file
     handle = open(args.output+'.'+str(my_rank), 'w')
-    handle.write('runname,sample,snum,subtype,count,total\n')
+    handle.write('runname,sample,snum,subtype,count,total,perc\n')
     
     for pindex, path in enumerate(paths):
         #if pindex % nprocs != my_rank:
@@ -231,10 +231,15 @@ def main():
             total_count = sum(counts.values()) + n_discard
 
             for subtype, count in counts.iteritems():
-                handle.write('%s,%s,%s,%s,%d,%d\n' % (runname, sample, snum, subtype, count, total_count))
+                if total_count:
+                    perc = count*100/float(total_count)
+                    handle.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
 
             # record number of reads that failed to map
-            handle.write('%s,%s,%s,,%d,%d\n' % (runname, sample, snum, n_discard, total_count))
+            if total_count:
+                discard_perc = n_discard*100/float(total_count)
+                handle.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, discard_perc))
+
             handle.flush()  # clear write buffer
             logfile = open(args.log+'.'+str(my_rank), 'a')
             logfile.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
@@ -244,7 +249,6 @@ def main():
             os.remove(f2_decomp_path)
             
     handle.close()
-    # logfile.close()
 
 
 if __name__ == '__main__':

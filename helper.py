@@ -183,9 +183,9 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     sample, snum = fastq1.split('_')[:2]
 
     for subtype, count in counts.iteritems():
-        perc = 0 if not total_count else count/float(total_count)
+        perc = 0 if not total_count else count*100/float(total_count)
         outpath.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
 
     # record number of reads that failed to map
-    disc_perc = 0 if not total_count else n_discard/float(total_count)
+    disc_perc = 0 if not total_count else n_discard*100/float(total_count)
     outpath.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, disc_perc))

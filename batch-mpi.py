@@ -10,132 +10,14 @@ import subprocess
 import re
 from glob import glob
 from datetime import datetime
+import helper
 
 from mpi4py import MPI
 my_rank = MPI.COMM_WORLD.Get_rank()
 nprocs = MPI.COMM_WORLD.Get_size()
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
-
-
-def is_first_read(flag):
-    """
-    Interpret bitwise flag from SAM field.
-    Returns True or False indicating whether the read is the first read in a pair.
-    """
-    IS_FIRST_SEGMENT = 0x40
-    return (int(flag) & IS_FIRST_SEGMENT) != 0
-
-def count_file_lines(path):
-    """ Run the wc command to count lines in a file, as shown here:
-    https://gist.github.com/zed/0ac760859e614cd03652
-    """
-    wc_output = subprocess.check_output(['wc', '-l', path])
-    return int(wc_output.split()[0])
-
-
-def count_zipped_file_lines(path):
-    """ Run the wc command to count lines in a gzipped file, as shown here:
-    https://gist.github.com/zed/0ac760859e614cd03652
-    http://stackoverflow.com/questions/4846891/python-piping-output-between-two-subprocesses
-    http://superuser.com/questions/135329/count-lines-in-a-compressed-file
-    """
-    unzipped_pipe = subprocess.Popen(['zcat', path], stdout=subprocess.PIPE)
-    wc_process = subprocess.Popen(['wc', '-l'], stdin=unzipped_pipe.stdout, stdout=subprocess.PIPE)
-    unzipped_pipe.stdout.close() # enable write error in zcat if wc dies
-    wc_out, wc_err = wc_process.communicate()
-
-    return int(wc_out.split()[0])
-
-
-def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score):
-    """
-    Process SAM output as it is streamed from bowtie2 to assign
-    short reads to HCV genotypes/subtypes.
-    Assumes that fastq1 and fastq1 are gzipped fastq files.
-    """
-    # get size of FASTQ
-    nrecords = count_zipped_file_lines(fastq1) / 2
-    
-    # stream output from bowtie2
-    bowtie_args = ['bowtie2',
-                   '--quiet',
-                   '-x', refpath,
-                   '-1', fastq1,
-                   '-2', fastq2,
-                   '--no-unal',
-                   '--local',
-                   '-p', str(bowtie_threads)]
-                   
-    p = subprocess.Popen(bowtie_args, stdout=subprocess.PIPE)
-    
-    # collect SAM output by refname
-    counts = {}
-    n_short = 0
-    n_hybrid = 0
-    n_mapq = 0
-    n_low = 0
-    progress = 0
-    total_count = 0
-    
-    with p.stdout:
-        for line in p.stdout:
-            if line.startswith('@'):
-                # skip header line
-                continue
-
-            items = line.split('\t')
-            qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
-            progress += 1
-            if progress % 10000 == 0:
-                print('[%s] (%d/%d) mapped %d (%d/%d/%d/%d)' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    progress, nrecords, 2*total_count, n_mapq, n_hybrid, n_short, n_low))
-                
-            subtype = rname.split('-')[1]  # 'HCV-1a' -> '1a'
-            genotype = subtype[0]
-            
-            # ignore second reads
-            if not is_first_read(flag):
-                continue
-            
-            # discard reads with low map quality
-            q = int(mapq)
-            if q < min_mapq:
-                n_mapq += 1
-                continue
-
-            # ignore reads whose mate mapped to a different genotype
-            if rnext != '=' and genotype != rnext.split('-')[1][0]:
-                n_hybrid += 1
-                continue
-            
-            # filter out reads based on match length - e.g., primers
-            tokens = cigar_re.findall(cigar)
-            match_len = sum([int(token.strip('M')) for token in tokens if token.endswith('M')])
-            if match_len < min_match_len:
-                n_short += 1
-                continue
-
-            # filter out reads with low alignment score
-            optionals = dict([item.split(':i:') for item in items[11:] if ':i:' in item])
-            if 'AS' not in optionals or int(optionals['AS']) < min_score:
-                n_low += 1
-                continue
-
-            # update counts
-            if subtype not in counts:
-                counts.update({subtype: 0})
-            counts[subtype] += 1
-            total_count += 1
-            
-        if p.returncode:
-            raise subprocess.CalledProcessError(p.returncode, bowtie_args)
-
-    # output results
-    keys = counts.keys()
-    keys.sort()
-
-    return counts, n_short, n_mapq, n_hybrid
+BOWTIE2_VERSION = "2.2.1"
 
 
 
@@ -176,9 +58,7 @@ def main():
     
     complete = {}
     # new output file
-    handle = open(args.output+'.'+str(my_rank), 'w')
-    handle.write('runname,sample,snum,subtype,count,total,perc\n')
-    logfile = None
+
     for pindex, path in enumerate(paths):
         #if pindex % nprocs != my_rank:
         #    continue
@@ -216,33 +96,19 @@ def main():
                 # skip previously processed sample
                 continue
 
-            logfile = open(args.log+'.'+str(my_rank), 'a')
-            logfile.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
-            logfile.close()
 
-            counts, n_short, n_mapq, n_hybrid = do_map(f1, f2, args.x, args.p, args.minlen, args.minq, args.mins)
-            n_discard = n_short + n_mapq + n_hybrid
-            total_count = sum(counts.values()) + n_discard
+            # 57368-2-HLA-B_S2_L001_I1_001.fastq.gz
+            fastq_output_csv = args.output + "." + os.path.basename(f1).split("_L001_R1")[0]
+            logfilename = args.log+'.'+str(my_rank)
+            with open(fastq_output_csv, 'w') as fh_out_csv, open(logfilename, 'a') as fh_log:
+                fh_log.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 
+                helper.mixed_hcv(fastq1=f1, fastq2=f2, outpath=fh_out_csv, refpath=args.x, bowtie2_version=BOWTIE2_VERSION,
+                                 min_match_len=args.minlen, min_mapq=args.minq, min_score=args.mins,
+                                 n_threads=args.p, is_show_progress=True)
 
-            for subtype, count in counts.iteritems():
-                if total_count:
-                    perc = count*100/float(total_count)
-                    handle.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
+                fh_log.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 
-            # record number of reads that failed to map
-            if total_count:
-                discard_perc = n_discard*100/float(total_count)
-                handle.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, discard_perc))
-
-            handle.flush()  # clear write buffer
-            logfile = open(args.log+'.'+str(my_rank), 'a')
-            logfile.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
-            logfile.close()
-            
-    handle.close()
-    if logfile:
-        logfile.close()
 
 
 if __name__ == '__main__':

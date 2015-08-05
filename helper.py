@@ -4,8 +4,6 @@
 Calculate the frequency of HCV genotypes and subtypes from a MiSeq
 sample (paired FASTQ files) by mapping short reads to a library
 of reference genomes.
-
-Refactored for Kive, take positional arguments.
 """
 
 import sys
@@ -14,10 +12,8 @@ import argparse
 import subprocess
 import re
 import bowtie2
-import helper
+from datetime import datetime
 
-bowtie2_version = '2.2.1'
-refpath='gb-ref_hg38.fa'  # CodeResource will get written to pwd
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
 
@@ -33,15 +29,39 @@ def count_file_lines(path):
     """ Run the wc command to count lines in a file, as shown here:
     https://gist.github.com/zed/0ac760859e614cd03652
     """
+    if path.endswith(".gz"):
+        count_zipped_file_lines(path)
     wc_output = subprocess.check_output(['wc', '-l', path])
     return int(wc_output.split()[0])
 
 
-def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_score=0):
+
+def count_zipped_file_lines(path):
+    """ Run the wc command to count lines in a gzipped file, as shown here:
+    https://gist.github.com/zed/0ac760859e614cd03652
+    http://stackoverflow.com/questions/4846891/python-piping-output-between-two-subprocesses
+    http://superuser.com/questions/135329/count-lines-in-a-compressed-file
+    """
+    unzipped_pipe = subprocess.Popen(['zcat', path], stdout=subprocess.PIPE)
+    wc_process = subprocess.Popen(['wc', '-l'], stdin=unzipped_pipe.stdout, stdout=subprocess.PIPE)
+    unzipped_pipe.stdout.close() # enable write error in zcat if wc dies
+    wc_out, wc_err = wc_process.communicate()
+
+    return int(wc_out.split()[0])
+
+
+def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score, bowtie2_version, is_show_progress=False):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
     """
+    # get size of FASTQ
+    progress = 0
+    nrecords = 0
+    if is_show_progress:
+        nrecords = count_zipped_file_lines(fastq1) / 2
+
+    # collect SAM output by refname
     counts = {}
     rejects = {'unknown': 0, 'mapq': 0, 'hybrid': 0, 'low score': 0, 'short': 0}
     total_count = 0
@@ -56,6 +76,12 @@ def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_sc
 
         items = line.split('\t')
         qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
+        if is_show_progress:
+            progress += 1
+            if progress % 10000 == 0:
+                print('[%s] (%d/%d) mapped %d (%d/%d/%d/%d)' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    progress, nrecords, 2*total_count, rejects["mapq"], rejects["hybrid"], rejects["short"], rejects["low score"]))
+
         
         # ignore second reads
         if not is_first_read(flag):
@@ -115,7 +141,10 @@ def do_map(fastq1, fastq2, bowtie_threads, min_match_len=100, min_mapq=0, min_sc
     return counts, rejects
 
 
-def mixed_hcv(fastq1, fastq2, outpath, n_threads=4):
+
+def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
+              min_match_len=100, min_mapq=0, min_score=0,
+              n_threads=4, is_show_progress=False):
     """
     Calls do_map and handles writing to output file
     :param refpath: Path to bowtie2 index files
@@ -130,11 +159,13 @@ def mixed_hcv(fastq1, fastq2, outpath, n_threads=4):
     if not all([os.path.exists(refpath+ext) for ext in extensions]):
         # generate index files
         bowtie2.build(bowtie2_version, refpath)
-    
+
     # new output file
     outpath.write('subtype,count,total,perc\n')
 
-    counts, discards = do_map(fastq1, fastq2, n_threads)
+    counts, discards = do_map(fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
+                              min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
+                              is_show_progress=is_show_progress)
     n_discard = sum(discards.values())
     total_count = sum(counts.values()) + n_discard
 
@@ -145,25 +176,4 @@ def mixed_hcv(fastq1, fastq2, outpath, n_threads=4):
 
     # record number of reads that failed to map
     disc_perc = 0 if not total_count else n_discard/float(total_count)
-    outpath.write(',%d,%d\n' % (n_discard, total_count, disc_perc))
-
-
-def main():
-    """
-    For shell execution, Kive style (positional arguments)
-    :return:
-    """
-    parser = argparse.ArgumentParser(description='Map contents of paired Illumina MiSeq FASTQ R1 and R2 data sets to '
-                                                 'HCV genome references using bowtie2.')
-
-    parser.add_argument('fastq1', help='<input> FASTQ containing forward reads')
-    parser.add_argument('fastq2', help='<input> FASTQ containing reverse reads')
-    parser.add_argument('outpath',
-                        type=argparse.FileType('w'),
-                        help='<output> CSV containing counts of reads mapped to HCV genotypes and subtypes.')
-
-    args = parser.parse_args()
-    helper.mixed_hcv(fastq1=args.fastq1, fastq2=args.fastq2, outpath=args.outpath, refpath=refpath, bowtie2_version=bowtie2_version)
-
-if __name__ == '__main__':
-    main()
+    outpath.write(',%d,%d,%.4g\n' % (n_discard, total_count, disc_perc))

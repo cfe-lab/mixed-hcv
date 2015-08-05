@@ -146,7 +146,8 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
 
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
               min_match_len=100, min_mapq=0, min_score=0,
-              n_threads=4, is_show_progress=False):
+              n_threads=4, is_show_progress=False, runname="", 
+              sample="", snum=""):
     """
     Calls do_map and handles writing to output file
     ASSUMES:
@@ -179,8 +180,6 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
 
 
     #runname, sample, snum, subtype, count, total_count, perc)
-    runname = os.path.basename(os.path.dirname(os.path.abspath(fastq1)))
-    sample, snum = fastq1.split('_')[:2]
 
     for subtype, count in counts.iteritems():
         perc = 0 if not total_count else count*100/float(total_count)

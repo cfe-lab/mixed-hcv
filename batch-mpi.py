@@ -28,6 +28,7 @@ def main():
     parser.add_argument('-path', help='<input> folder containing gzipped FASTQ files.  Assumes that parent dir of fastq.gz files is the runname')
     parser.add_argument('-pathlist', help='<input> file containing list of folders')
     parser.add_argument('-output', help='<output CSV> file to write results')
+    parser.add_argument('-runname', help='<input> name of the run')
     parser.add_argument('-log', help='path to logfile', default='mixed-hcv.batch.log')
     parser.add_argument('-x', help='path to bowtie2 index (.bt2)', default='data/gb-ref')
     parser.add_argument('-p', type=int, help='number of bowtie2 threads', default=6)
@@ -78,7 +79,7 @@ def main():
             sys.exit()
 
 
-        runname = os.path.basename(os.path.dirname(os.path.abspath(files[0])))
+        runname = args.runname 
 
         for i, f1 in enumerate(files):
             # distribute across nodes
@@ -105,7 +106,7 @@ def main():
 
                 helper.mixed_hcv(fastq1=f1, fastq2=f2, outpath=fh_out_csv, refpath=args.x, bowtie2_version=BOWTIE2_VERSION,
                                  min_match_len=args.minlen, min_mapq=args.minq, min_score=args.mins,
-                                 n_threads=args.p, is_show_progress=True)
+                                 n_threads=args.p, is_show_progress=True, runname=runname, sample=sample, snum=snum)
 
                 fh_log.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 

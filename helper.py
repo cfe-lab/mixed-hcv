@@ -54,12 +54,14 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
+
     """
     # get size of FASTQ
     progress = 0
     nrecords = 0
     if is_show_progress:
         nrecords = count_zipped_file_lines(fastq1) / 2
+
 
     # collect SAM output by refname
     counts = {}
@@ -147,6 +149,11 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
               n_threads=4, is_show_progress=False):
     """
     Calls do_map and handles writing to output file
+    ASSUMES:
+    - runname is the name of the parent directory of the fastq file.
+    - fastq file follows miseq sample naming conventions:
+        <enum>_S<sample num>_L001_R2_001.fastq.gz
+
     :param refpath: Path to bowtie2 index files
     :param fastq1: Path to R1 FASTQ
     :param fastq2: Path to R2 FASTQ
@@ -161,7 +168,8 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
         bowtie2.build(bowtie2_version, refpath)
 
     # new output file
-    outpath.write('subtype,count,total,perc\n')
+    #runname,sample,snum,subtype,count,total,perc
+    outpath.write('runname,sample,snum,subtype,count,total,perc\n')
 
     counts, discards = do_map(fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
                               min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
@@ -170,10 +178,14 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     total_count = sum(counts.values()) + n_discard
 
 
+    #runname, sample, snum, subtype, count, total_count, perc)
+    runname = os.path.basename(os.path.dirname(os.path.abspath(fastq1)))
+    sample, snum = fastq1.split('_')[:2]
+
     for subtype, count in counts.iteritems():
         perc = 0 if not total_count else count/float(total_count)
-        outpath.write('%s,%d,%d,%.4g\n' % (subtype, count, total_count, perc))
+        outpath.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
 
     # record number of reads that failed to map
     disc_perc = 0 if not total_count else n_discard/float(total_count)
-    outpath.write(',%d,%d,%.4g\n' % (n_discard, total_count, disc_perc))
+    outpath.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, disc_perc))

@@ -3,8 +3,9 @@ iter=0
 
 for input in $@ 
 do 
-    if [ iter = 0 ] ; then
+    if [ $iter = 0 ] ; then
         head -n1 $input;
+        iter=$iter+1
     fi
     tail -n+2 $input;
 done;

@@ -20,7 +20,6 @@ cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 BOWTIE2_VERSION = "2.2.1"
 
 
-
 def main():
     parser = argparse.ArgumentParser(
         description='Map contents of FASTQ R1 and R2 data sets to references using bowtie2.')
@@ -35,6 +34,7 @@ def main():
     parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=100)
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
+    parser.add_argument("--mapqfile", help="<output CSV> file containing mapping quality scores (optional)")
 
     args = parser.parse_args()
     
@@ -78,7 +78,6 @@ def main():
             print 'ERROR: No FASTQ R1 files found at', path
             sys.exit()
 
-
         runname = args.runname 
 
         for i, f1 in enumerate(files):
@@ -100,16 +99,29 @@ def main():
 
             # 57368-2-HLA-B_S2_L001_I1_001.fastq.gz
             fastq_output_csv = args.output + "." + os.path.basename(f1).split("_L001_R1")[0]
+            mapq_filename = None
+            if args.mapqfile:
+                mapq_filename = args.mapqfile + "." + os.path.basename(f1).split("_L001_R1")[0]
             logfilename = args.log+'.'+str(my_rank)
             with open(fastq_output_csv, 'w') as fh_out_csv, open(logfilename, 'a') as fh_log:
-                fh_log.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 
-                helper.mixed_hcv(fastq1=f1, fastq2=f2, outpath=fh_out_csv, refpath=args.x, bowtie2_version=BOWTIE2_VERSION,
-                                 min_match_len=args.minlen, min_mapq=args.minq, min_score=args.mins,
-                                 n_threads=args.p, is_show_progress=True, runname=runname, sample=sample, snum=snum)
+                mapq_outfile = None
+                try:
+                    if args.mapqfile:
+                        mapq_outfile = open(mapq_filename, "wb")
 
-                fh_log.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
+                    fh_log.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 
+                    helper.mixed_hcv(fastq1=f1, fastq2=f2, outpath=fh_out_csv, refpath=args.x, bowtie2_version=BOWTIE2_VERSION,
+                                     min_match_len=args.minlen, min_mapq=args.minq, min_score=args.mins,
+                                     n_threads=args.p, is_show_progress=True, runname=runname, sample=sample, snum=snum,
+                                     mapq_outfile=mapq_outfile)
+
+                    fh_log.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
+
+                finally:
+                    if mapq_outfile:
+                        mapq_outfile.close()
 
 
 if __name__ == '__main__':

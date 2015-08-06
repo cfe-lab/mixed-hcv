@@ -6,12 +6,11 @@ sample (paired FASTQ files) by mapping short reads to a library
 of reference genomes.
 """
 
-import sys
 import os
-import argparse
 import subprocess
 import re
 import bowtie2
+import csv
 from datetime import datetime
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
@@ -25,6 +24,7 @@ def is_first_read(flag):
     IS_FIRST_SEGMENT = 0x40
     return (int(flag) & IS_FIRST_SEGMENT) != 0
 
+
 def count_file_lines(path):
     """ Run the wc command to count lines in a file, as shown here:
     https://gist.github.com/zed/0ac760859e614cd03652
@@ -33,7 +33,6 @@ def count_file_lines(path):
         count_zipped_file_lines(path)
     wc_output = subprocess.check_output(['wc', '-l', path])
     return int(wc_output.split()[0])
-
 
 
 def count_zipped_file_lines(path):
@@ -50,7 +49,8 @@ def count_zipped_file_lines(path):
     return int(wc_out.split()[0])
 
 
-def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score, bowtie2_version, is_show_progress=False):
+def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score, bowtie2_version,
+           is_show_progress=False):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
@@ -67,6 +67,9 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     counts = {}
     rejects = {'unknown': 0, 'mapq': 0, 'hybrid': 0, 'low score': 0, 'short': 0}
     total_count = 0
+
+    # This is for collecting read qualities.
+    mapqs = {}
 
     # stream STDOUT from bowtie2
     bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=['--quiet', '--local'])
@@ -110,6 +113,9 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
             rejects['mapq'] += 1
             continue
 
+        # Collect the mapping quality info.
+        mapqs[(qname, flag)] = mapq
+
         # ignore reads whose mate mapped to a different genotype
         mate_genotype = rnext.split('-')[1][0] if '-' in rnext else ''
         if rnext != '=' and genotype != mate_genotype:
@@ -140,14 +146,13 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     keys = counts.keys()
     keys.sort()
 
-    return counts, rejects
-
+    return counts, rejects, mapqs
 
 
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
               min_match_len=100, min_mapq=0, min_score=0,
               n_threads=4, is_show_progress=False, runname="", 
-              sample="", snum=""):
+              sample="", snum="", mapq_outfile=None):
     """
     Calls do_map and handles writing to output file
     ASSUMES:
@@ -160,6 +165,7 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     :param fastq2: Path to R2 FASTQ
     :param outpath: Where to write CSV output
     :param n_threads: Number of bowtie2 threads to run
+    :param mapq_path: where to write mapping quality information
     :return:
     """
     # check if index files exist
@@ -172,12 +178,13 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     #runname,sample,snum,subtype,count,total,perc
     outpath.write('runname,sample,snum,subtype,count,total,perc\n')
 
-    counts, discards = do_map(fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
-                              min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
-                              is_show_progress=is_show_progress)
+    counts, discards, mapqs = do_map(
+        fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
+        min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
+        is_show_progress=is_show_progress
+    )
     n_discard = sum(discards.values())
     total_count = sum(counts.values()) + n_discard
-
 
     #runname, sample, snum, subtype, count, total_count, perc)
 
@@ -188,3 +195,10 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     # record number of reads that failed to map
     disc_perc = 0 if not total_count else n_discard*100/float(total_count)
     outpath.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, disc_perc))
+
+    # If mapq_outfile is specified, write the mapping quality information out to it.
+    if mapq_outfile:
+        mapq_csv_writer = csv.writer(mapq_outfile)
+        mapq_csv_writer.writerow(("qname", "flag", "mapq"))
+        for qname, flag in mapqs:
+            mapq_csv_writer.writerow((qname, flag, mapqs[(qname, flag)]))

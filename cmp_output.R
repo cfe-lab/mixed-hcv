@@ -1,5 +1,6 @@
 library(plyr)
 library(knitr)
+library(ggplot2)
 
 MAX_PERC_DIFF <- 0.01
 
@@ -33,9 +34,32 @@ cmp20$perc.20HcvHum[is.na(cmp20$perc.20HcvHum)] <- 0
 cmp20$perc.20Hcv[is.na(cmp20$perc.20Hcv)] <- 0
 cmp20$perc_diff_20HcvHum_20Hcv <- cmp20$perc.20HcvHum - cmp20$perc.20Hcv
 
-# summary(cmp20)
-# head(cmp20)
-# dim(cmp20)
+
+popperc.20HcvHum <- ddply(.data=cmp20,
+                          .variables=c("runname", "sample", "snum"),
+                          .fun=function(x) {
+                            data.frame(
+                              totalhcv.20HcvHum=sum(x$count.20HcvHum[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE),
+                              totalhcv.20Hcv=sum(x$count.20Hcv[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
+                              )
+                          })
+
+summary(popperc.20HcvHum)
+head(popperc.20HcvHum)
+dim(popperc.20HcvHum)
+
+cmp20 <- merge(x=cmp20,
+               y=popperc.20HcvHum,
+               all=TRUE)
+cmp20$hcvperc.20HcvHum <- cmp20$count.20HcvHum*100/cmp20$totalhcv.20HcvHum 
+cmp20$hcvperc.20Hcv <- cmp20$count.20Hcv*100/cmp20$totalhcv.20Hcv 
+cmp20$hcvperc.20HcvHum[cmp20$subtype == "" | grepl("hg38", cmp20$subtype) == TRUE] <- NA
+cmp20$hcvperc.20HcvHum[cmp20$subtype == "" | grepl("hg38", cmp20$subtype) == TRUE] <- NA
+summary(cmp20)
+head(cmp20)
+dim(cmp20)
+
+
 
 write.table(cmp20, "/media/macdatafile/mixed-hcv/cmp_jul20_Hcv_HcvHuman.csv", sep=",", row.names=FALSE, na="")
 
@@ -57,8 +81,8 @@ kable(subset(bigchange_jul20, select=-runname),
 #' 
 #+ fig.width=20, fig.height=8
 # IQR in % coverage change due to change in reference by subtype
-fig <- ggplot(cmp[grepl("hg38", cmp$subtype) == FALSE & cmp$subtype != "",], 
-              aes(x=subtype, y=perc_diff)) + 
+fig <- ggplot(cmp20[grepl("hg38", cmp20$subtype) == FALSE & cmp20$subtype != "",], 
+              aes(x=subtype, y=perc_diff_20HcvHum_20Hcv)) + 
   geom_boxplot(fill="red") + 
   ggtitle("July 20: Reference Makes Small Difference in Subtype %") + 
   xlab("HCV Subtype") + 
@@ -79,14 +103,14 @@ print(fig)
 #' 
 
 
-jul24_hcvhuman <- read.table("/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150724_M01841_0150_000000000-AE8E0.gb-ref+hg38_v2.csv",
+jul24_hcvhuman <- read.table("/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150724_M01841_0150_000000000-AE8E0.csv",
                              sep=",", header=TRUE)
 summary(jul24_hcvhuman)
 head(jul24_hcvhuman)
 dim(jul24_hcvhuman)
 
 
-jul24_hcv <- read.table("/media/macdatafile/mixed-hcv/gb-ref/150724_M01841_0150_000000000-AE8E0.gb-ref.csv",
+jul24_hcv <- read.table("/media/macdatafile/mixed-hcv/gb-ref/150724_M01841_0150_000000000-AE8E0.csv",
                         sep=",", header=TRUE)
 summary(jul24_hcv)
 head(jul24_hcv)
@@ -102,10 +126,31 @@ cmp24$perc.24HcvHum[is.na(cmp24$perc.24HcvHum)] <- 0
 cmp24$perc.24Hcv[is.na(cmp24$perc.24Hcv)] <- 0
 cmp24$perc_diff_24HcvHum_24Hcv <- cmp24$perc.24HcvHum - cmp24$perc.24Hcv
 
+
+popperc.24 <- ddply(.data=cmp24,
+                          .variables=c("runname", "sample", "snum"),
+                          .fun=function(x) {
+                            data.frame(
+                              totalhcv.24HcvHum=sum(x$count.24HcvHum[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE),
+                              totalhcv.24Hcv=sum(x$count.24Hcv[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
+                            )
+                          })
+summary(popperc.24)
+head(popperc.24)
+dim(popperc.24)
+
+cmp24 <- merge(x=cmp24,
+               y=popperc.24,
+               all=TRUE)
+cmp24$hcvperc.24HcvHum <- cmp24$count.24HcvHum * 100 / cmp24$totalhcv.24HcvHum
+cmp24$hcvperc.24Hcv <- cmp24$count.24Hcv * 100/ cmp24$totalhcv.24Hcv
+cmp24$hcvperc.24HcvHum[cmp24$subtype == "" | grepl("hg38", cmp24$subtype) == TRUE] <- NA
+cmp24$hcvperc.24Hcv[cmp24$subtype == "" | grepl("hg38", cmp24$subtype) == TRUE] <- NA
 summary(cmp24)
 head(cmp24)
 dim(cmp24)
 
+write.table(cmp24, "/media/macdatafile/mixed-hcv/cmp_jul24_Hcv_HcvHuman.csv", sep=",", row.names=FALSE,  na="")
 
 summary(cmp24[abs(cmp24$perc_diff_24HcvHum_24Hcv) > MAX_PERC_DIFF & grepl("hg38", cmp24$subtype)==FALSE & cmp24$subtype != "" ,])
 dim(cmp24[abs(cmp24$perc_diff_24HcvHum_24Hcv) > MAX_PERC_DIFF & grepl("hg38", cmp24$subtype)==FALSE & cmp24$subtype != "" ,])
@@ -124,7 +169,7 @@ kable(bigchange_jul24, format="html", caption="July 24 Sample Subtypes Affected 
 #+ fig.width=15, fig.height=8
 # IQR in % coverage change due to change in reference by subtype
 fig <- ggplot(cmp24[grepl("hg38", cmp24$subtype) == FALSE & cmp24$subtype != "",], 
-              aes(x=subtype, y=perc_diff)) + 
+              aes(x=subtype, y=perc_diff_24HcvHum_24Hcv)) + 
   geom_boxplot(fill="red") + 
   ggtitle("July 24: Reference Makes Small Difference in Subtype %") + 
   xlab("HCV Subtype") + 
@@ -149,7 +194,7 @@ cmp <- merge(x=subset(cmp20, select=-runname),
              by.x=c("sample", "snum", "subtype"),
              by.y=c("sample", "snum", "subtype"),
              all=TRUE)
-cmp$perc_diff_24HcvHuman_20HcvHuman
+cmp$hcvperc_diff_24HcvHuman_20HcvHuman <- cmp$hcvperc.24HcvHum - cmp$hcvperc.20HcvHum
 
 summary(cmp)
 head(cmp)

@@ -69,20 +69,7 @@ class HCVDeli():
     def timestamp(self, msg):
         return '[%s] %s' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
 
-    def is_first_read(self, flag):
-        """
-        Interpret bitwise flag from SAM field.
-        Returns True or False indicating whether the read is the first read in a pair.
-        """
-        IS_FIRST_SEGMENT = 0x40
-        return (int(flag) & IS_FIRST_SEGMENT) != 0
 
-    def count_file_lines(self, path):
-        """ Run the wc command to count lines in a file, as shown here:
-        https://gist.github.com/zed/0ac760859e614cd03652
-        """
-        wc_output = subprocess.check_output(['wc', '-l', path])
-        return int(wc_output.split()[0])
 
     def apply_cigar (self, cigar, seq, qual):
         """
@@ -174,14 +161,16 @@ class HCVDeli():
         return mseq
 
 
-    def align(self, fastq1, fastq2):
+    def align(self, fastq1, fastq2, is_show_progress=False):
         """
         Process SAM output as it is streamed from bowtie2 to assign
         short reads to HCV genotypes/subtypes.
         """
         # get size of FASTQ
-        nrecords = self.count_file_lines(fastq1) / 2
-        print self.timestamp('total reads %d' % nrecords)
+        nrecords = 0
+        if is_show_progress:
+            nrecords = helper.count_file_lines(fastq1) / 2
+            print self.timestamp('total reads %d' % nrecords)
 
         # We don't care about reads where only single mate maps
         # We don't care about reads where mates map to different reference
@@ -204,9 +193,10 @@ class HCVDeli():
                 # skip header line
                 continue
 
-            progress += 1
-            if progress % 5000 == 0:
-                print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
+            if is_show_progress:
+                progress += 1
+                if progress % 5000 == 0:
+                    print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
 
             # FIXME: DEBUGGING
             #if progress > 100000:
@@ -310,7 +300,7 @@ class HCVDeli():
         return slices
 
 
-    def run(self, f1, f2, handle, log, runname='', complete=[]):
+    def run(self, f1, f2, handle, log, runname='', complete=[], is_show_progress=False):
         """
         Analyze a pair of FASTQ files.
         :param f1: FASTQ R1 input
@@ -335,7 +325,7 @@ class HCVDeli():
         logfile.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
         logfile.close()
 
-        aligned = self.align(f1, f2)
+        aligned = self.align(f1, f2, is_show_progress=is_show_progress)
         slices = self.slice(aligned)
         # write out to file
         for gene, subsets in slices.iteritems():
@@ -455,7 +445,7 @@ def main():
         # no continuation of run for single file mode!
         handle = open(args.output, 'w')
         handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,seq\n')
-        deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log)
+        deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log, is_show_progress=True)
         handle.close()
     else:
         # this should never happen!

@@ -15,6 +15,40 @@ from datetime import datetime
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
+CODON_DICT = {'TTT':'F', 'TTC':'F', 'TTA':'L', 'TTG':'L',
+              'TCT':'S', 'TCC':'S', 'TCA':'S', 'TCG':'S', 'TC-':'S', 'TCN':'S',
+              'TAT':'Y', 'TAC':'Y', 'TAA':'*', 'TAG':'*',
+              'TGT':'C', 'TGC':'C', 'TGA':'*', 'TGG':'W',
+              'CTT':'L', 'CTC':'L', 'CTA':'L', 'CTG':'L', 'CT-':'L', 'CTN':'L',
+              'CCT':'P', 'CCC':'P', 'CCA':'P', 'CCG':'P', 'CC-':'P', 'CCN':'P',
+              'CAT':'H', 'CAC':'H', 'CAA':'Q', 'CAG':'Q',
+              'CGT':'R', 'CGC':'R', 'CGA':'R', 'CGG':'R', 'CG-':'R', 'CGN':'R',
+              'ATT':'I', 'ATC':'I', 'ATA':'I', 'ATG':'M',
+              'ACT':'T', 'ACC':'T', 'ACA':'T', 'ACG':'T', 'AC-':'T', 'ACN':'T',
+              'AAT':'N', 'AAC':'N', 'AAA':'K', 'AAG':'K',
+              'AGT':'S', 'AGC':'S', 'AGA':'R', 'AGG':'R',
+              'GTT':'V', 'GTC':'V', 'GTA':'V', 'GTG':'V', 'GT-':'V', 'GTN':'V',
+              'GCT':'A', 'GCC':'A', 'GCA':'A', 'GCG':'A', 'GC-':'A', 'GCN':'A',
+              'GAT':'D', 'GAC':'D', 'GAA':'E', 'GAG':'E',
+              'GGT':'G', 'GGC':'G', 'GGA':'G', 'GGG':'G', 'GG-':'G', 'GGN':'G',
+              '---':'-', 'XXX':'X'}
+
+
+
+
+class SamFlag:
+    IS_PAIRED =                0x001
+    IS_MAPPED_IN_PROPER_PAIR = 0x002
+    IS_UNMAPPED =              0x004
+    IS_MATE_UNMAPPED =         0x008
+    IS_REVERSE =               0x010
+    IS_MATE_REVERSE =          0x020
+    IS_FIRST =                 0x040
+    IS_SECOND =                0x080
+    IS_SECONDARY_ALIGNMENT =   0x100
+    IS_FAILED =                0x200
+    IS_DUPLICATE =             0x400
+    IS_CHIMERIC_ALIGNMENT =    0x800
 
 def is_first_read(flag):
     """
@@ -23,6 +57,38 @@ def is_first_read(flag):
     """
     IS_FIRST_SEGMENT = 0x40
     return (int(flag) & IS_FIRST_SEGMENT) != 0
+
+def is_primary(flag):
+    """
+    :return bool:  Returns whether the current record is primary alignment
+    """
+    if flag is None:
+        raise ValueError("No flag associated with this record")
+    return not SamFlag.IS_UNMAPPED & flag and not SamFlag.IS_SECONDARY_ALIGNMENT & flag
+
+
+def is_chimeric(flag):
+    """
+    :return bool:  Returns whether the current record is chimeric alignment
+    """
+    return SamFlag.IS_CHIMERIC_ALIGNMENT & flag
+
+def translate(seq, shift=0):
+    """
+    Translate nucleotide sequence to AA.  Allows gaps, mixtures, Ns.
+    :param str seq: nucleotide sequence
+    :param int shift: frameshift.  Will leftpad with gaps before translation.
+    :return str:  aa sequence.  Unknown AA are represented with ?
+    """
+    # Does not handle mixtures
+    seq = "-"*shift + seq
+    seqlen = len(seq)
+    aa_seq = ""
+    for codon_site in xrange(0, seqlen, 3):
+        if codon_site+3 <= seqlen:
+            codon = seq[codon_site:codon_site+3]
+            aa_seq += CODON_DICT.get(codon, "?")
+    return aa_seq
 
 
 def count_file_lines(path):

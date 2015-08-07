@@ -10,6 +10,10 @@ import subprocess
 import re
 from glob import glob
 from datetime import datetime
+import bowtie2
+import settings
+import helper
+import csv
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 gpfx = re.compile('^[-]+')  # length of gap prefix
@@ -17,9 +21,29 @@ gpfx = re.compile('^[-]+')  # length of gap prefix
 class HCVDeli():
     """
     Because it cuts HCV reads into delicious slices.
+    :param str coords_file:  filepath to comma-separated file with cols:  subtype ref name, gene, 0based start nuc coord wrt subtype gene, 0based end nuc coord+1 wrt subtype gene
+    :param str targets_file:  filepath to comma-separated target regions file with cols:  gene, 0based nuc start coord wrt H77 gene, 0based nuc end coord+1 wrt H77 gene
+            colnames:  Gene,Startnuc_0based,AfterEndNuc_0based
     """
-    def __init__(self, x, p, minlen, minq, mins, coords_file='data/gb-ref2.coords'):
+    def __init__(self, x, p, minlen, minq, mins, coords_file='data/gb-ref2.coords', targets_file=None):
+
+        # H77 nuc gene coordinates, 0 based.  Start pos, end pos + 1
+        # These targets aren't in frames (multiples of 3).  Instead, they are based on 250bp sections that determine genotyping accuracy as per
+        # http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0122082#pone-0122082-t002
         self.targets = {'NS5a': [(0, 250)], 'NS5b': [(100, 350), (600, 850)], 'NS3': [(700, 950)]}
+
+        # Append in additional targets specifed by user
+        if targets_file:
+            with open(targets_file, 'rU') as fh_in_tgt:
+                csvreader = csv.DictReader(fh_in_tgt)
+                for line in csvreader:
+                    gene = line["Gene"]
+                    start_0based = line["StartNuc_0based"]
+                    after_end_0based = line["AfterEndNuc_0based"]
+                    if gene not in self.targets:
+                        self.targets.update({gene:[]})
+                    self.targets[gene].append((int(start_0based), int(after_end_0based)))
+
         self.min_overlap = 250
 
         self.p = None  # this will be assigned the bowtie2 process
@@ -37,9 +61,10 @@ class HCVDeli():
             if rname not in self.coords:
                 self.coords.update({rname: {}})
             self.coords[rname].update({gene: (int(left), int(right))})
+        handle.close()
 
-    def __del__(self):
-        self.p.terminate()  # close down bowtie2, esp. in case of Python exiting
+    # def __del__(self):
+    #     self.p.terminate()  # close down bowtie2, esp. in case of Python exiting
 
     def timestamp(self, msg):
         return '[%s] %s' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg)
@@ -108,6 +133,8 @@ class HCVDeli():
         """
         Combine paired-end reads into a single sequence by managing discordant
         base calls on the basis of quality scores.
+        :param str seq1:  mate1 sequence, left-padded wrt reference
+        :param str seq2:  mate2 sequence, left-padded wrt reference
         """
         mseq = ''
         # force second read to be longest of the two
@@ -156,62 +183,83 @@ class HCVDeli():
         nrecords = self.count_file_lines(fastq1) / 2
         print self.timestamp('total reads %d' % nrecords)
 
-        # stream output from bowtie2
-        bowtie_args = ['bowtie2',
-                       '--quiet',
-                       '-x', self.refpath,
-                       '-1', fastq1,
-                       '-2', fastq2,
-                       '--no-unal',
-                       '--no-mixed',  # mates must map to same reference
-                       '--local',
-                       '-p', str(self.bowtie_threads)]
+        # We don't care about reads where only single mate maps
+        # We don't care about reads where mates map to different reference
+        bowtie2_iter = bowtie2.align_paired(version=settings.bowtie2_version,
+                                            refpath=self.refpath,
+                                            fastq1=fastq1,
+                                            fastq2=fastq2, nthreads=self.bowtie_threads,
+                                            flags=['--quiet', '--local',
+                                                   '--no-unal',  # ignore any reads in which both mates don't map to ref
+                                                   '--no-mixed'])  # mates must map to same reference])
 
-        self.p = subprocess.Popen(bowtie_args, stdout=subprocess.PIPE)
+
 
         progress = 0
         read_cache = {}
         aligned = {}
         # stream bowtie2 output, gather and merge reads
-        with self.p.stdout:
-            for line in self.p.stdout:
-                if line.startswith('@'):
-                    # skip header line
-                    continue
+        for line in bowtie2_iter:
+            if line.startswith('@'):
+                # skip header line
+                continue
 
-                progress += 1
-                if progress % 5000 == 0:
-                    print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
+            progress += 1
+            if progress % 5000 == 0:
+                print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
 
-                # FIXME: DEBUGGING
-                #if progress > 100000:
-                #    break
+            # FIXME: DEBUGGING
+            #if progress > 100000:
+            #    break
 
-                items = line.split('\t')
-                qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
-                pos = int(pos)-1  # convert to 0-index
+            items = line.split('\t')
+            qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
+            pos = int(pos)-1  # convert to 0-index
+            flag = int(flag)
 
-                _, seq1, qual1, inserts = self.apply_cigar(cigar, seq, qual)
-                seq2 = '-' * pos + seq1
-                qual2 = '!' * pos + qual1
+            # Don't want chimeric or secondary alignments
+            if not helper.is_primary(flag) or helper.is_chimeric(flag):
+                continue
 
-                if qname not in read_cache:
-                    read_cache.update({qname: (rname, seq2, qual2)})
-                    continue
+            # We only slice HCV
+            if rname == '*' or rname.startswith('hg38'):
+                continue
 
-                # pop mate from cache
-                _, seq1, qual1 = read_cache.pop(qname)
-                mseq = self.merge_pairs(seq1, seq2, qual1, qual2, q_cutoff=15)
-                if mseq.count('N') / float(len(mseq.strip('-'))) > 0.2:
-                    continue
+            _, seq1, qual1, inserts = self.apply_cigar(cigar, seq, qual)
+            seq2 = '-' * pos + seq1
+            qual2 = '!' * pos + qual1
 
-                key = (mseq, rname, pos)
-                if key not in aligned:
-                    aligned.update({key: 0})
-                aligned[key] += 1
+            # TODO:  remove this.  hack to check for 1a ref sequences with indels wrt h77 in NS5a gene
+            endpos = pos + len(seq1) - 1
+            for indel_ref, indel_ref_start, indel_ref_end in [("HCV-1a-EU781824", 6204, 7544),
+                                                              ("HCV-1a-EU781823", 6181, 7539),
+                                                              ("HCV-1a-EU256096", 6178, 7530),
+                                                              ("HCV-1a-EU256104", 6175, 7530),
+                                                              ("HCV-1a-KC283194", 5960, 7304),
+                                                              ("HCV-1a-EU482836", 6189, 7529)]:
+                if rname == indel_ref and pos >= indel_ref_start and endpos <= indel_ref_end:
+                    print "ERROR: hit 1a ref with indel wrt H77  in NS5A - \n" + line
 
-            if self.p.returncode:
-                raise subprocess.CalledProcessError(self.p.returncode, bowtie_args)
+            # Once we loop, we lose track of this mate.  If the other mate is unmapped, we never output this mate.
+            # I.e.  we exclude single mates
+            if qname not in read_cache:
+                read_cache.update({qname: (rname, seq2, qual2, pos)})
+                continue
+
+            # pop mate from cache
+            rname1, seq1, qual1, pos1 = read_cache.pop(qname)
+            mseq = self.merge_pairs(seq1, seq2, qual1, qual2, q_cutoff=15)
+            if mseq.count('N') / float(len(mseq.strip('-'))) > 0.2:
+                continue
+
+            # use left-most coordinate between mate1 and mate2 for merged mates
+            read_start_1based_wrt_subtype_fullgenome = min(pos, pos1)
+            key = (mseq, rname, read_start_1based_wrt_subtype_fullgenome)
+            if key not in aligned:
+                aligned.update({key: 0})
+            aligned[key] += 1
+
+
 
         return aligned
 
@@ -221,14 +269,15 @@ class HCVDeli():
         Slice segments out of aligned reads if they map to correct gene regions.
         Map position should be relative to the reference genome that it mapped to.
         Insertions will have been filtered out by apply_cigar().
+        Do not allow reads that do not entirely cover target region.
         :param aligned:
         :return:
         """
         slices = {}
         for (mseq, rname, pos), count in aligned.iteritems():
             # check where this read mapped
-            read_start = int(pos)
-            read_end = read_start + len(mseq.strip('-'))
+            read_start = int(pos)  # 1based coord wrt subtype full genome  corresponding to read start
+            read_end = read_start + len(mseq.strip('-'))  # 1based coord wrt subtype full genome corresponding to read end + 1
             coords = self.coords[rname]
             if read_end < coords['Core'][0] or read_start > coords['NS5b'][1]:
                 # read falls outside of ORF
@@ -238,21 +287,24 @@ class HCVDeli():
             for target_gene, target_coords in self.targets.iteritems():
                 if target_gene not in slices:
                     slices.update({target_gene: {}})
-                left, right = coords[target_gene]
+                left, right = coords[target_gene]  # 0based nuc coordinates wrt subtype full genome corresponding to gene start, gene end+1
 
-                for tc in target_coords:
+                for tc in target_coords:  # 0based nuc coordinates wrt H77 gene corresponding to target start, target end + 1
                     if tc not in slices[target_gene]:
                         slices[target_gene].update({tc: []})
+                    # 0based nuc coordinates wrt H77 gene corresponding to target start, target end + 1
                     gene_left, gene_right = tc  # unpack tuple
 
-                    # adjust gene coordinates to genome coordinates
-                    genome_left = gene_left + left
-                    genome_right = gene_right + left
-                    if read_start > genome_left or read_end < genome_right:
+                    # adjust gene coordinates to genome coordinates.  Assume no indels wrt H77
+                    genome_left = gene_left + left  # 0based nuc coordinates wrt subtype full genome corresponding to H77 target start
+                    genome_right = gene_right + left # 0based nuc coordinates wrt subtype full genome corresponding to H77 target end + 1
+                    if read_start > genome_left + 1 or read_end < genome_right+1:
                         # full coverage of target not possible
                         continue
 
-                    slice = mseq[genome_left:genome_right]
+                    slice = mseq[genome_left:genome_right]  # mseq should be left-padded wrt subtype full genome
+                    # if not slice:
+                    #     print "rname=" + rname + " mseq=" + mseq + " readstart=" + str(read_start) + " genomeleft=" + str(genome_left) + " readend=" + str(read_end) + " genomeright=" + str(genome_right)
                     slices[target_gene][tc].append((rname, slice, count))
 
         return slices
@@ -288,18 +340,27 @@ class HCVDeli():
         # write out to file
         for gene, subsets in slices.iteritems():
             for coords, subset in subsets.iteritems():
-                left, right = coords
-                intermed = [(count, rname, seq) for rname, seq, count in subset]
+                # 0based nuc coordinates wrt H77 gene corresponding to target start, target end + 1
+                target_left_0based_wrt_h77gene, target_right_0based_wrt_h77_gene = coords
+                intermed = [(count, rname, nucseq) for rname, nucseq, count in subset]
                 intermed.sort(reverse=True)
-                for rank, (count, rname, seq) in enumerate(intermed):
+                for rank, (count, rname, nucseq) in enumerate(intermed):
                     subtype = rname.split('-')[1]
-                    handle.write('%s,%s,%s,%s,%d,%d,%d,%d,%s,%s\n' % (runname, sample, snum, gene,
-                                                                   left, right, rank+1, count, subtype, seq))
+                    # Assume that all deletions in the nucleotide sequence have been removed
+                    # and that there are no deletions prior to the nucleotide sequence
+                    # so that the left coordinate is true.
+                    frameshift = target_left_0based_wrt_h77gene % 3
+                    aaseq = helper.translate(seq=nucseq, shift=frameshift)
+                    handle.write('%s,%s,%s,%s,%d,%d,%d,%d,%s,%s,%s\n' % (runname, sample, snum, gene,
+                                                                   target_left_0based_wrt_h77gene, target_right_0based_wrt_h77_gene,
+                                                                   rank+1, count, subtype, nucseq, aaseq))
                     handle.flush()  # make sure we write intact lines
 
         logfile = open(log, 'a')
         logfile.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
         logfile.close()
+
+
 
 
     def batch(self, paths, output, log):
@@ -326,7 +387,7 @@ class HCVDeli():
         else:
             # new output file
             handle = open(output, 'w')
-            handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,seq\n')
+            handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
 
         for path in paths:
             # check that the inputs exist
@@ -378,7 +439,7 @@ def main():
     args = parser.parse_args()
     if not ((args.R1 and args.R2) or args.path or args.pathlist):
         parser.error('Must set one of the following: {-R1 and -R2, -path, -pathlist}.')
-    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins)
+    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, targets_file="data/HCV_ResMutList_TargetNucCoord.csv")
 
     paths = []
     if args.pathlist:
@@ -402,5 +463,7 @@ def main():
         sys.exit()
 
 
+
 if __name__ == '__main__':
     main()
+

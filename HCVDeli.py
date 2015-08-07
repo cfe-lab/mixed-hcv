@@ -444,7 +444,7 @@ def main():
     elif args.R1:
         # no continuation of run for single file mode!
         handle = open(args.output, 'w')
-        handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,seq\n')
+        handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
         deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log, is_show_progress=True)
         handle.close()
     else:

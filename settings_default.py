@@ -17,3 +17,7 @@ min_match_len = 50
 
 # minimum map quality
 min_mapq = 10
+
+
+# default bowtie version on bulbasasur
+bowtie2_version = "2.2.1"

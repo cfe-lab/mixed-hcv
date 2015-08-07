@@ -50,6 +50,8 @@ def align_paired(version, refpath, fastq1, fastq2, nthreads, flags=('--quiet', '
         yield line
 
     # exception handling
+    if p2.returncode:
+        raise subprocess.CalledProcessError(p2.returncode, bowtie_args)
 
 
 def main():

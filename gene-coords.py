@@ -35,10 +35,10 @@ for h, s in fasta:
     for gene, ref in h77:
         # locate the H77 gene in this reference genome
         aquery, aref, ascore = align.pair_align(hyphy, ref, s)
-        left, right = align.get_boundaries(aref)
+        left, right = align.get_boundaries(aref)  # 0based coordinates corresponding to position of first nongap char, position of last nongapchar+1
         aquery2 = aquery[left:right].replace('-', '')
-        coord1 = s.index(aquery2)
-        coord2 = coord1 + len(aquery2)
+        coord1 = s.index(aquery2)  # 0based coordinate cooresponding to start of gene in subtype reference full genome
+        coord2 = coord1 + len(aquery2)  # 0based coordinate corresponding to end of gene in subtype reference full genome + 1
         
         outfile.write('%s,%s,%d,%d\n' % (h, gene, coord1, coord2))
 

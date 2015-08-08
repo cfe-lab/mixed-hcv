@@ -20,9 +20,9 @@ opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error=
 options(width=200)
 
 
-# subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150731_M01841_0153_000000000-AE96E.csv"
-# expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150731_M01841_0153_000000000-AE96E.expected_mixture.csv"
-# runname <- "150731_M01841_0153_000000000-AE96E"
+# subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150802_M01841_0154_000000000-AE8FV.csv"
+# expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150802_M01841_0154_000000000-AE8FV.expected_mixture.csv"
+# runname <- "150802_M01841_0154_000000000-AE8FV"
 
 
 subtype_hits <- read.table(subtype_hits_csv, sep=",", header=TRUE)
@@ -65,24 +65,33 @@ hits <- adply(.data=hits,
                 }
                 
                 act_hcv_subtype_categ <- ""  # adply will convert NA to a numeric for some reason.  Workaround set to empty string.
+                act_hcv_subtype <- ""
                 if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {
                   act_hcv_subtype_categ <- ""
+                  act_hcv_subtype <- ""
                 } else if (x$hcvperc < MIN_SUBTYPE_REPORT_PERC) {
-                  act_hcv_subtype_categ <- "Other"
+                  act_hcv_subtype_categ <- "Any Subtype < 1% in Sample"
+                  act_hcv_subtype <- as.character(x$subtype)
                 } else {
                   act_hcv_subtype_categ <- as.character(x$subtype)
+                  act_hcv_subtype <- as.character(x$subtype)
                 }
                 
-                act_hcv_gtype_categ <- ""
+                
+                act_hcv_gtype <- ""
                 if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {
                   act_hcv_gtype_categ <- ""
+                  act_hcv_gtype <- ""
                 } else if (x$hcvperc < MIN_GTYPE_REPORT_PERC) {
-                  act_hcv_gtype_categ <- "Other"
-                } else {
-                  act_hcv_gtype_categ <- substr(x$subtype, 1, 1)
+                  
+                  act_hcv_gtype <- substr(x$subtype, 1, 1)
+                } else {                  
+                  act_hcv_gtype <- substr(x$subtype, 1, 1)
                 }
                 
-                data.frame(act_hcv_gtype_categ=act_hcv_gtype_categ,
+                data.frame(act_hcv_gtype=act_hcv_gtype,
+                           
+                           act_hcv_subtype=act_hcv_subtype,
                            act_hcv_subtype_categ=act_hcv_subtype_categ,
                            category=category
                            )
@@ -90,15 +99,22 @@ hits <- adply(.data=hits,
 hits$category <- as.factor(hits$category)
 
 # Reorder levels, adply screws up level ordering
+hits$act_hcv_subtype[hits$act_hcv_subtype == ""] <- NA
+hits$act_hcv_subtype <- as.factor(hits$act_hcv_subtype)
+hits$act_hcv_subtype <- factor(hits$act_hcv_subtype,
+                                     levels=sort(levels(hits$act_hcv_subtype)))
+
 hits$act_hcv_subtype_categ[hits$act_hcv_subtype_categ == ""] <- NA
 hits$act_hcv_subtype_categ <- as.factor(hits$act_hcv_subtype_categ)
 hits$act_hcv_subtype_categ <- factor(hits$act_hcv_subtype_categ,
                                                   levels=sort(levels(hits$act_hcv_subtype_categ)))
 
-hits$act_hcv_gtype_categ[hits$act_hcv_gtype_categ == ""] <- NA
-hits$act_hcv_gtype_categ <- as.factor(hits$act_hcv_gtype_categ)
-hits$act_hcv_gtype_categ <- factor(hits$act_hcv_gtype_categ,
-                                                  levels=sort(levels(hits$act_hcv_gtype_categ)))
+hits$act_hcv_gtype[hits$act_hcv_gtype == ""] <- NA
+hits$act_hcv_gtype <- as.factor(hits$act_hcv_gtype)
+hits$act_hcv_gtype <- factor(hits$act_hcv_gtype,
+                                   levels=sort(levels(hits$act_hcv_gtype)))
+
+
 #' HCV Mixture Results For Run `r runname`
 #' ===========================================================
 #' 
@@ -116,31 +132,38 @@ hits$act_hcv_gtype_categ <- factor(hits$act_hcv_gtype_categ,
 #' 
 #' 
 # Aggregate by major hcv genotype  (ignore nonhcv hits).  Genotypes < MIN_REPORT_PERC % are collapsed into "other" genotype
-major_gtypes <- ddply(.data=hits[!is.na(hits$act_hcv_gtype_categ),],
-                              .variables=c("runname", "sample", "snum", "act_hcv_gtype_categ"),
+major_gtypes <- ddply(.data=hits[!is.na(hits$act_hcv_gtype),],
+                              .variables=c("runname", "sample", "snum", "act_hcv_gtype"),
                               .fun=function(x) {
                                 data.frame(
-                                  act_hcv_gtype_categ_perc = sum(x$hcvperc, na.rm=TRUE)
+                                  act_hcv_gtype_perc = sum(x$hcvperc, na.rm=TRUE),
+                                  act_hcv_gtype_categ = ifelse (sum(x$hcvperc, na.rm=TRUE) < MIN_GTYPE_REPORT_PERC, "Any Genotype < 1% in Sample", substr(x$subtype, 1, 1))
                                 )
                               })
 
+major_gtypes$act_hcv_gtype_categ[major_gtypes$act_hcv_gtype_categ == ""] <- NA
+major_gtypes$act_hcv_gtype_categ <- as.factor(major_gtypes$act_hcv_gtype_categ)
+major_gtypes$act_hcv_gtype_categ <- factor(major_gtypes$act_hcv_gtype_categ,
+                                     levels=sort(levels(major_gtypes$act_hcv_gtype_categ)))
+
+
 # Check if the actual genotype percentage is within +/- MAX_GTYPE_DIFF_PERC of the expected
 check_gtype <- merge(x=unique(expected_mixture[, c("runname", "sample", "gtype", "gtype_perc")]),
-                     y=subset(major_gtypes, major_gtypes$act_hcv_gtype_categ != "Other"),
+                     y=subset(major_gtypes, !is.na(major_gtypes$act_hcv_gtype)),
                      by.x=c("runname", "sample", "gtype"),
-                     by.y=c("runname", "sample", "act_hcv_gtype_categ"),
+                     by.y=c("runname", "sample", "act_hcv_gtype"),
                      all.x=TRUE, 
                      all.y=FALSE)
 
-check_gtype$act_hcv_gtype_categ_perc[is.na(check_gtype$act_hcv_gtype_categ_perc)] <- 0
-check_gtype$diff_gtype_perc <- abs(check_gtype$gtype_perc - check_gtype$act_hcv_gtype_categ_perc)
+check_gtype$act_hcv_gtype_perc[is.na(check_gtype$act_hcv_gtype_perc)] <- 0
+check_gtype$diff_gtype_perc <- abs(check_gtype$gtype_perc - check_gtype$act_hcv_gtype_perc)
 
 sample_gtype_result <- ddply(.data=check_gtype,
                               .variables=c("runname", "sample"),
                               .fun=function(x) {
                                 # each expected genotype must be within MAX_GTYPE_DIFF_PERC of actual genotype
                                 # total unexpected genotype must be less than the smallest expected genotype
-                                unexpected_gtype_perc <- 100 - sum(x$act_hcv_gtype_categ_perc, na.rm=TRUE)
+                                unexpected_gtype_perc <- 100 - sum(x$act_hcv_gtype_perc, na.rm=TRUE)
                                 total_gtype_offrange <- sum(x$diff_gtype_perc > MAX_GTYPE_DIFF_PERC, na.rm=TRUE)
                                 
                                 data.frame(
@@ -150,17 +173,17 @@ sample_gtype_result <- ddply(.data=check_gtype,
                                                         "Wrong", 
                                                         "Right"))
                               })
-sample_gtype_result$is_gtype_ok <- as.factor(sample_gtype_result$is_gtype_ok)
+sample_gtype_result$is_gtype_ok <- factor(sample_gtype_result$is_gtype_ok, levels=c("Right", "Wrong"))
 
 # hacks to get ggplot working with 2 diff datasets.  Columns must match.
 sample_gtype_result$act_hcv_gtype_categ <- NA
-sample_gtype_result$act_hcv_gtype_categ_perc <- NA
+sample_gtype_result$act_hcv_gtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_gtypes$act_hcv_gtype_categ))
 getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_gtypes,   
-              aes(x=sample, weight=act_hcv_gtype_categ_perc, fill=act_hcv_gtype_categ)) + 
+              aes(x=sample, weight=act_hcv_gtype_perc, fill=act_hcv_gtype_categ)) + 
   geom_bar(color="black") + 
   geom_text(data=sample_gtype_result, aes(x=sample, y=-10, label=is_gtype_ok, color=is_gtype_ok)) + 
   guides(color=FALSE) + 
@@ -179,10 +202,15 @@ fig <- ggplot(major_gtypes,
         legend.position="top")
 print(fig)
 
-sort_major_gtypes <- major_gtypes[order(major_gtypes$sample, -major_gtypes$act_hcv_gtype_categ_perc),]
-sort_major_gtypes <- subset(sort_major_gtypes, select=-c(runname))
+major_gtypes_categ <- ddply(.data=major_gtypes,
+                            .variables=c("runname", "sample", "snum", "act_hcv_gtype_categ"),
+                            .fun=function(x) {
+                              data.frame(act_hcv_gtype_categ_perc=sum(x$act_hcv_gtype_perc, na.rm=TRUE))
+                            })
+sort_major_gtypes_categ <- major_gtypes_categ[order(major_gtypes_categ$sample, -major_gtypes_categ$act_hcv_gtype_categ_perc),]
+sort_major_gtypes_categ <- subset(sort_major_gtypes_categ, select=-c(runname))
 #+ results="asis"
-kable(sort_major_gtypes, 
+kable(sort_major_gtypes_categ, 
       format="html",
       caption="Sample Genotype Breakdown",
       row.names=FALSE,
@@ -206,10 +234,10 @@ kable(sort_major_gtypes,
 
 # Aggregate by major hcv subtype  (ignore nonhcv hits).  Subtypes < 1 % are collapsed into "other" subtype.
 major_subtypes <- ddply(.data=hits[!is.na(hits$act_hcv_subtype_categ),],
-                              .variables=c("runname", "sample", "snum", "act_hcv_subtype_categ"),
+                              .variables=c("runname", "sample", "snum", "act_hcv_subtype", "act_hcv_subtype_categ"),
                               .fun=function(x) {
                                 data.frame(
-                                  act_hcv_subtype_categ_perc = sum(x$hcvperc, na.rm=TRUE)
+                                  act_hcv_subtype_perc = sum(x$hcvperc, na.rm=TRUE)
                                 )
                               })
 
@@ -217,9 +245,9 @@ major_subtypes <- ddply(.data=hits[!is.na(hits$act_hcv_subtype_categ),],
 
 # Check if the actual subtype percentage is within +/- MAX_SUBTYPE_DIFF_PERC of the expected
 check_subtype <- merge(x=expected_mixture,
-                     y=subset(major_subtypes, major_subtypes$act_hcv_subtype_categ != "Other"),
+                     y=subset(major_subtypes, !is.na(major_subtypes$act_hcv_subtype)),
                      by.x=c("runname", "sample", "subtype"),
-                     by.y=c("runname", "sample", "act_hcv_subtype_categ"),
+                     by.y=c("runname", "sample", "act_hcv_subtype"),
                      all.x=TRUE, all.y=FALSE)
 
 check_gtype_subtype <- merge(x=subset(check_subtype, select=-snum),
@@ -228,8 +256,8 @@ check_gtype_subtype <- merge(x=subset(check_subtype, select=-snum),
 
 
 # If an expected subtype is NA, then that means that any subtype of parent genotype is OK.
-check_gtype_subtype$act_hcv_subtype_categ[is.na(check_gtype_subtype$act_hcv_subtype_categ)] <- 0
-check_gtype_subtype$diff_subtype_perc <- abs(check_gtype_subtype$subtype_perc - check_gtype_subtype$act_hcv_subtype_categ)
+check_gtype_subtype$act_hcv_subtype_perc[is.na(check_gtype_subtype$act_hcv_subtype_perc)] <- 0
+check_gtype_subtype$diff_subtype_perc <- abs(check_gtype_subtype$subtype_perc - check_gtype_subtype$act_hcv_subtype_perc)
 
 
 sample_subtype_result <- ddply(.data=check_gtype_subtype,
@@ -242,8 +270,8 @@ sample_subtype_result <- ddply(.data=check_gtype_subtype,
                          specific_subtype_ok_x <- x[!is.na(x$subtype) & x$subtype != "", ]
                          
                          unexpected_subtype_gtype_perc <- 100 - 
-                           sum(specific_subtype_ok_x$act_hcv_subtype_categ_perc, na.rm=TRUE)  - 
-                           sum(any_subtype_ok_x$act_hcv_gtype_categ_perc, na.rm=TRUE)
+                           sum(specific_subtype_ok_x$act_hcv_subtype_perc, na.rm=TRUE)  - 
+                           sum(any_subtype_ok_x$act_hcv_gtype_perc, na.rm=TRUE)
                         
                          total_subtype_offrange <- sum(x$diff_subtype_perc > MAX_SUBTYPE_DIFF_PERC, na.rm=TRUE)
                          
@@ -265,16 +293,17 @@ sample_gtype_subtype_result$is_ok <- as.factor(ifelse(sample_gtype_subtype_resul
                                               sample_gtype_subtype_result$is_gtype_ok == "Wrong",
                                             "Wrong",
                                             "Right"))
+sample_gtype_subtype_result$is_ok <- factor(sample_gtype_subtype_result$is_ok, levels=c("Right", "Wrong"))  # ensure ordering for colors
 
 # hack to get ggplot working witn 2 diff dataframes
 sample_gtype_subtype_result$act_hcv_subtype_categ <- NA
-sample_gtype_subtype_result$act_hcv_subtype_categ_perc <- NA
+sample_gtype_subtype_result$act_hcv_subtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_subtypes$act_hcv_subtype_categ))
 getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_subtypes,
-            aes(x=sample, weight=act_hcv_subtype_categ_perc, fill=act_hcv_subtype_categ)) + 
+            aes(x=sample, weight=act_hcv_subtype_perc, fill=act_hcv_subtype_categ)) + 
   geom_bar(color="black") + 
   scale_fill_manual(name="HCV Subtype", values = getPalette(colourCount)) +
   geom_text(data=sample_gtype_subtype_result, aes(x=sample, y=-10, label=is_ok, color=is_ok)) + 
@@ -293,11 +322,15 @@ fig <- ggplot(major_subtypes,
         legend.position="top")
 print(fig)
 
-
-sort_major_subtypes <- major_subtypes[order(major_subtypes$sample, -major_subtypes$act_hcv_subtype_categ_perc),]
-sort_major_subtypes <- subset(sort_major_subtypes, select=-c(runname))
+major_subtypes_categ <- ddply(major_subtypes,
+                              .variables=c("runname", "sample", "snum", "act_hcv_subtype_categ"),
+                              .fun=function(x) {
+                                data.frame(act_hcv_subtype_categ_perc=sum(x$act_hcv_subtype_perc, na.rm=TRUE))
+                              })
+sort_major_subtypes_categ <- major_subtypes_categ[order(major_subtypes_categ$sample, -major_subtypes_categ$act_hcv_subtype_categ_perc),]
+sort_major_subtypes_categ <- subset(sort_major_subtypes_categ, select=-c(runname))
 #+ results="asis"
-kable(sort_major_subtypes, 
+kable(sort_major_subtypes_categ, 
       format="html",
       caption="Sample Subtype Breakdown",
       row.names=FALSE,

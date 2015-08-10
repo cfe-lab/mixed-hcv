@@ -231,7 +231,6 @@ class HCVDeli():
                                                               ("HCV-1a-KC283194", 5960, 7304),
                                                               ("HCV-1a-EU482836", 6189, 7529)]:
                 if rname == indel_ref and pos >= indel_ref_start and endpos <= indel_ref_end:
-                    print "ERROR: hit 1a ref with indel wrt H77  in NS5A - \n" + line
                     total_indel_ignore += 1
                     continue
 

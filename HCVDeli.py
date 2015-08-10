@@ -27,13 +27,14 @@ class HCVDeli():
     """
     def __init__(self, x, p, minlen, minq, mins, coords_file='data/gb-ref2.coords', targets_file=None):
 
-        # H77 nuc gene coordinates, 0 based.  Start pos, end pos + 1
-        # These targets aren't in frames (multiples of 3).  Instead, they are based on 250bp sections that determine genotyping accuracy as per
-        # http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0122082#pone-0122082-t002
-        self.targets = {'NS5a': [(0, 250)], 'NS5b': [(100, 350), (600, 850)], 'NS3': [(700, 950)]}
+        if not targets_file:
+            # H77 nuc gene coordinates, 0 based.  Start pos, end pos + 1
+            # These targets aren't in frames (multiples of 3).  Instead, they are based on 250bp sections that determine genotyping accuracy as per
+            # http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0122082#pone-0122082-t002
+            self.targets = {'NS5a': [(0, 250)], 'NS5b': [(100, 350), (600, 850)], 'NS3': [(700, 950)]}
 
-        # Append in additional targets specifed by user
-        if targets_file:
+        else:
+            self.targets = dict()
             with open(targets_file, 'rU') as fh_in_tgt:
                 csvreader = csv.DictReader(fh_in_tgt)
                 for line in csvreader:
@@ -187,6 +188,8 @@ class HCVDeli():
         progress = 0
         read_cache = {}
         aligned = {}
+        total_indel_ignore = 0  # TODO:  hack to keep track of alignments to ref sequences with indels wrt H77
+
         # stream bowtie2 output, gather and merge reads
         for line in bowtie2_iter:
             if line.startswith('@'):
@@ -229,6 +232,8 @@ class HCVDeli():
                                                               ("HCV-1a-EU482836", 6189, 7529)]:
                 if rname == indel_ref and pos >= indel_ref_start and endpos <= indel_ref_end:
                     print "ERROR: hit 1a ref with indel wrt H77  in NS5A - \n" + line
+                    total_indel_ignore += 1
+                    continue
 
             # Once we loop, we lose track of this mate.  If the other mate is unmapped, we never output this mate.
             # I.e.  we exclude single mates
@@ -250,6 +255,7 @@ class HCVDeli():
             aligned[key] += 1
 
 
+        print "ERROR: Total hit 1a ref with indel wrt H77  in NS5A - " + str(total_indel_ignore)
 
         return aligned
 
@@ -363,6 +369,17 @@ class HCVDeli():
         :return:
         """
 
+        # Are we in mpi mode?
+        try:
+            from mpi4py import MPI
+            my_rank = MPI.COMM_WORLD.Get_rank()
+            nprocs = MPI.COMM_WORLD.Get_size()
+
+        except ImportError:
+            print("Disabling MPI")
+            my_rank = 0
+            nprocs = 1
+
         # enable script to restart from interrupted run
         complete = {}
         if os.path.exists(output):
@@ -388,15 +405,18 @@ class HCVDeli():
             if not path.endswith('/'):
                 path += '/'
 
-            files = glob(path + '*_R1_001.fastq')
+            files = glob(path + '*_R1_001.fastq*')
             if len(files) == 0:
                 print 'ERROR: No FASTQ R1 files found at', path
                 sys.exit()
 
             runname = path.split('/')[4]
-            for f1 in files:
+
+            for i, f1 in enumerate(files):
+                if i % nprocs != my_rank:
+                    continue
                 f2 = f1.replace('_R1_', '_R2_')
-                self.run(f1, f2, handle, log, runname=runname, complete=complete)
+                self.run(f1, f2, handle, log, runname=runname, complete=complete, is_show_progress=True)
 
         handle.close()
 
@@ -425,11 +445,12 @@ def main():
     parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=100)
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
+    parser.add_argument('-targetfile', help='<input> file containing list of folders.  If unspecified, uses predetermined 250bp gene regions best for genotyping')
 
     args = parser.parse_args()
     if not ((args.R1 and args.R2) or args.path or args.pathlist):
         parser.error('Must set one of the following: {-R1 and -R2, -path, -pathlist}.')
-    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, targets_file="data/HCV_ResMutList_TargetNucCoord.csv")
+    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, targets_file=args.targetfile)
 
     paths = []
     if args.pathlist:

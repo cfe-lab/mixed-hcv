@@ -96,7 +96,7 @@ def count_file_lines(path):
     https://gist.github.com/zed/0ac760859e614cd03652
     """
     if path.endswith(".gz"):
-        count_zipped_file_lines(path)
+        return count_zipped_file_lines(path)
     wc_output = subprocess.check_output(['wc', '-l', path])
     return int(wc_output.split()[0])
 

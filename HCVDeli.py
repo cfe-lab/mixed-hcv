@@ -196,11 +196,6 @@ class HCVDeli():
                 # skip header line
                 continue
 
-            if is_show_progress:
-                progress += 1
-                if progress % 5000 == 0:
-                    print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
-
             # FIXME: DEBUGGING
             #if progress > 100000:
             #    break
@@ -213,6 +208,12 @@ class HCVDeli():
             # Don't want chimeric or secondary alignments
             if not helper.is_primary(flag) or helper.is_chimeric(flag):
                 continue
+
+            if is_show_progress:  # Increment progress after checking for chimeric/secondary alignments otherwise, can have more alignments than reads.
+                progress += 1
+                if progress % 5000 == 0:
+                    print(self.timestamp('mapped %d of %d' % (progress, nrecords)))
+
 
             # We only slice HCV
             if rname == '*' or rname.startswith('hg38'):
@@ -298,8 +299,9 @@ class HCVDeli():
                         continue
 
                     slice = mseq[genome_left:genome_right]  # mseq should be left-padded wrt subtype full genome
-                    # if not slice:
-                    #     print "rname=" + rname + " mseq=" + mseq + " readstart=" + str(read_start) + " genomeleft=" + str(genome_left) + " readend=" + str(read_end) + " genomeright=" + str(genome_right)
+
+                    # After slicing merged sequences, we may end up with duplicate slices for the same target gene & coords
+                    #   against the same reference
                     slices[target_gene][tc].append((rname, slice, count))
 
         return slices
@@ -337,10 +339,23 @@ class HCVDeli():
             for coords, subset in subsets.iteritems():
                 # 0based nuc coordinates wrt H77 gene corresponding to target start, target end + 1
                 target_left_0based_wrt_h77gene, target_right_0based_wrt_h77_gene = coords
-                intermed = [(count, rname, nucseq) for rname, nucseq, count in subset]
-                intermed.sort(reverse=True)
-                for rank, (count, rname, nucseq) in enumerate(intermed):
+
+                # After slicing merged sequences, we may end up with duplicate slices for the same target gene & coords
+                #   against the same reference.  Merge these entries.
+                subtype_slice_to_count = {}
+                for rname, nucseq, count in subset:
                     subtype = rname.split('-')[1]
+                    if not subtype_slice_to_count.get((subtype, nucseq)):
+                        subtype_slice_to_count[(subtype, nucseq)] = 0
+
+                    subtype_slice_to_count[(subtype, nucseq)] += count
+
+
+                # Sort by count
+                intermed = sorted(subtype_slice_to_count.items(), key=lambda x:x[1], reverse=True)
+
+                for rank, ((subtype, nucseq), count) in enumerate(intermed):
+
                     # Assume that all deletions in the nucleotide sequence have been removed
                     # and that there are no deletions prior to the nucleotide sequence
                     # so that the left coordinate is true.
@@ -373,15 +388,19 @@ class HCVDeli():
             from mpi4py import MPI
             my_rank = MPI.COMM_WORLD.Get_rank()
             nprocs = MPI.COMM_WORLD.Get_size()
+            output += '.' + str(my_rank)
+            log += '.' + str(my_rank)
 
         except ImportError:
             print("Disabling MPI")
             my_rank = 0
             nprocs = 1
 
+
+
         # enable script to restart from interrupted run
         complete = {}
-        if os.path.exists(output):
+        if os.path.exists(output) and os.path.getsize(output):
             handle = open(output, 'rU')
             _ = handle.next()  # skip header
             for line in handle:
@@ -415,6 +434,7 @@ class HCVDeli():
                 if i % nprocs != my_rank:
                     continue
                 f2 = f1.replace('_R1_', '_R2_')
+
                 self.run(f1, f2, handle, log, runname=runname, complete=complete, is_show_progress=True)
 
         handle.close()

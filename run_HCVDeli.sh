@@ -5,6 +5,9 @@ quality=0
 
 for run in $runs; do
 
+    mkdir -p ./log/$run
+    mkdir -p ./out/$run
+
     mpirun -hostfile ./out/machines.txt -output-filename ./log/$run/$run.deli.stdout.log -v python HCVDeli.py  -path ./reads/$run  -log ./log/$run/$run.deli.log -x data/gb-ref+hg38_v2 -minq $quality  ./out/$run/$run.deli.csv
 
     bash catcsv.sh ./out/$run/$run.deli.csv.* >  /media/macdatafile/mixed-hcv/gb-ref+hg38_v2/deli/$run.csv

@@ -428,13 +428,15 @@ class HCVDeli():
                 print 'ERROR: No FASTQ R1 files found at', path
                 sys.exit()
 
-            runname = path.split('/')[4]
+            #runname = path.split('/')[4]
+
 
             for i, f1 in enumerate(files):
                 if i % nprocs != my_rank:
                     continue
                 f2 = f1.replace('_R1_', '_R2_')
 
+                runname = os.path.basename(os.path.dirname(os.path.abspath(f1)))
                 self.run(f1, f2, handle, log, runname=runname, complete=complete, is_show_progress=True)
 
         handle.close()

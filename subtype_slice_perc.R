@@ -1,10 +1,9 @@
-# Calculates the HCV subtype percentages for each sample and compares them to the expected mixture
 # when the alignments are filtered for regions that are predetermined for best genotyping
 # from http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0122082#pone-0122082-t002
+#
+# Usage:
+# Rscript -e "library(knitr);  spin('subtype_slice_perc.R', knit=FALSE); knit2html('subtype_slice_perc.Rmd', stylesheet='markdown_bigwidth.css')" [subtype slice hits csv] [expected mix csv] [runname]
 
-# ENVIRONMENT VARIABLES must be set beforehand:
-# - subtype_hits_csv
-# - expected_mixture_csv
 
 library(plyr)
 library(knitr)
@@ -12,33 +11,37 @@ library(ggplot2)
 library(reshape2)
 library(RColorBrewer)
 
+args <- commandArgs(trailingOnly = TRUE)
+print(args)
+
 MIN_SUBTYPE_REPORT_PERC <- 1
 MIN_GTYPE_REPORT_PERC <- 1
 
-MAX_GTYPE_DIFF_PERC <- 10
-MAX_SUBTYPE_DIFF_PERC <- 10
+MAX_GTYPE_DIFF_PERC <- 30
+MAX_SUBTYPE_DIFF_PERC <- 30
 
 opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error= TRUE, warning = FALSE, message=FALSE, echo=FALSE)
-options(width=200)
-
-subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150720_M01841_0148_000000000-AE93J.gb-ref+hg38_v2.csv"
-subtype_slice_hits_csv <- "/home/thuy/gitrepo/mixed-hcv/out/150720_M01841_0148_000000000-AE93J/150720_M01841_0148_000000000-AE93J.deli.out.csv"
-expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150720_M01841_0148_000000000-AE93J.expected_mixture.csv"
-runname <- "150720_M01841_0148_000000000-AE93J"
+#options(width=200)
 
 
-subtype_hits <- read.table(subtype_hits_csv, sep=",", header=TRUE)
+# subtype_slice_hits_csv <- "/home/thuy/gitrepo/mixed-hcv/out/150720_M01841_0148_000000000-AE93J/150720_M01841_0148_000000000-AE93J.deli.csv"
+# expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150720_M01841_0148_000000000-AE93J.expected_mixture.csv"
+# runname <- "150720_M01841_0148_000000000-AE93J"
+
+
+
+subtype_slice_hits_csv <- args[2]
+expected_mixture_csv <- args[3]
+runname <- args[4]
+
+
+
 expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE)
 expected_mixture$gtype <- as.factor(as.character(expected_mixture$gtype))
 
 
 
-
-
-
-
 # runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq
-
 subtype_slice_hits <- read.table(subtype_slice_hits_csv, sep=",", header=TRUE, na.strings=c(""))
 
 
@@ -46,17 +49,17 @@ total_subtypes <- ddply(.data=subtype_slice_hits,
                    .variables=c("runname", "sample", "snum", "subtype"),
                    .fun=function(x) {
                      data.frame(
-                       totalhcvslice=sum(x$count[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
+                       subtype_count=sum(x$count[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
                      )
                    })
 
 
-# find total reads that hit HCV
+# find total reads that hit HCV in the target regions
 total_hcv <- ddply(.data=subtype_slice_hits,
                    .variables=c("runname", "sample", "snum"),
                    .fun=function(x) {
                      data.frame(
-                       totalhcv=sum(x$count[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
+                       sample_slice_count=sum(x$count[x$subtype != "" & grepl("hg38", x$subtype) == FALSE], na.rm=TRUE)
                      )
                    })
 
@@ -65,12 +68,10 @@ slice_hits <- merge(x=total_subtypes,
                      by=c("runname", "sample", "snum"),
                      all=TRUE)
 
-# TODO:  remove me, shouldn't need
-slice_hits <- subset(slice_hits, !is.na(slice_hits$subtype))
 
-slice_hits$hcvperc <- ifelse(slice_hits$subtype == "" | grepl("hg38", slice_hits$subtype) == TRUE,
+slice_hits$subtype_perc <- ifelse(slice_hits$subtype == "" | grepl("hg38", slice_hits$subtype) == TRUE,
                        NA,
-                       slice_hits$totalhcvslice * 100/slice_hits$totalhcv)
+                       slice_hits$subtype_count * 100/slice_hits$sample_slice_count)
 
 
 # Collapse all subtypes with percentage < MIN_REPORT_PERC into "other" major subtype
@@ -79,54 +80,31 @@ slice_hits <- adply(.data=slice_hits,
               .margins=1,  # by row
               .fun=function(x) {
                                 
-                act_hcv_subtype_categ <- ""  # adply will convert NA to a numeric for some reason.  Workaround set to empty string.
-                act_hcv_subtype <- ""
+                act_hcv_subtype_categ <- ""  # adply will convert NA to a numeric for some reason.  Workaround set to empty string.     
+                
                 if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {
                   act_hcv_subtype_categ <- ""
-                  act_hcv_subtype <- ""
-                } else if (x$hcvperc < MIN_SUBTYPE_REPORT_PERC) {
+                } else if (x$subtype_perc < MIN_SUBTYPE_REPORT_PERC) {
                   act_hcv_subtype_categ <- "Any Subtype < 1% in Sample"
                   act_hcv_subtype <- as.character(x$subtype)
                 } else {
                   act_hcv_subtype_categ <- as.character(x$subtype)
-                  act_hcv_subtype <- as.character(x$subtype)
+                
                 }
-                
-                
+                                
                 act_hcv_gtype <- ""
-                if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {
-                  act_hcv_gtype_categ <- ""
+                if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {                  
                   act_hcv_gtype <- ""
-                } else if (x$hcvperc < MIN_GTYPE_REPORT_PERC) {
-                  
+                } else if (x$subtype_perc < MIN_GTYPE_REPORT_PERC) {                  
                   act_hcv_gtype <- substr(x$subtype, 1, 1)
                 } else {                  
                   act_hcv_gtype <- substr(x$subtype, 1, 1)
                 }
                 
-                data.frame(act_hcv_gtype=act_hcv_gtype,
-                           
-                           act_hcv_subtype=act_hcv_subtype,
+                data.frame(act_hcv_gtype=act_hcv_gtype,                                                      
                            act_hcv_subtype_categ=act_hcv_subtype_categ
                 )
               })
-
-
-# # Reorder levels, adply screws up level ordering
-# hits$act_hcv_subtype[hits$act_hcv_subtype == ""] <- NA
-# hits$act_hcv_subtype <- as.factor(hits$act_hcv_subtype)
-# hits$act_hcv_subtype <- factor(hits$act_hcv_subtype,
-#                                levels=sort(levels(hits$act_hcv_subtype)))
-# 
-# hits$act_hcv_subtype_categ[hits$act_hcv_subtype_categ == ""] <- NA
-# hits$act_hcv_subtype_categ <- as.factor(hits$act_hcv_subtype_categ)
-# hits$act_hcv_subtype_categ <- factor(hits$act_hcv_subtype_categ,
-#                                      levels=sort(levels(hits$act_hcv_subtype_categ)))
-# 
-# hits$act_hcv_gtype[hits$act_hcv_gtype == ""] <- NA
-# hits$act_hcv_gtype <- as.factor(hits$act_hcv_gtype)
-# hits$act_hcv_gtype <- factor(hits$act_hcv_gtype,
-#                              levels=sort(levels(hits$act_hcv_gtype)))
 
 
 #' HCV Mixture Results For Run `r runname`
@@ -150,8 +128,10 @@ major_gtypes <- ddply(.data=slice_hits[!is.na(slice_hits$act_hcv_gtype),],
                       .variables=c("runname", "sample", "snum", "act_hcv_gtype"),
                       .fun=function(x) {
                         data.frame(
-                          act_hcv_gtype_perc = sum(x$hcvperc, na.rm=TRUE),
-                          act_hcv_gtype_categ = ifelse (sum(x$hcvperc, na.rm=TRUE) < MIN_GTYPE_REPORT_PERC, "Any Genotype < 1% in Sample", substr(x$subtype, 1, 1))
+                          act_hcv_gtype_perc = sum(x$subtype_perc, na.rm=TRUE),
+                          act_hcv_gtype_categ = ifelse (sum(x$subtype_perc, na.rm=TRUE) < MIN_GTYPE_REPORT_PERC, 
+                                                        "Any Genotype < 1% in Sample", 
+                                                        substr(x$subtype, 1, 1))
                         )
                       })
 
@@ -195,7 +175,7 @@ sample_gtype_result$act_hcv_gtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_gtypes$act_hcv_gtype_categ))
-getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
+getPalette <- colorRampPalette(brewer.pal(min(8, colourCount) , "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_gtypes,   
               aes(x=sample, weight=act_hcv_gtype_perc, fill=act_hcv_gtype_categ)) + 
   geom_bar(color="black") + 
@@ -248,10 +228,10 @@ kable(sort_major_gtypes_categ,
 
 # Aggregate by major hcv subtype  (ignore nonhcv hits).  Subtypes < 1 % are collapsed into "other" subtype.
 major_subtypes <- ddply(.data=slice_hits[!is.na(slice_hits$act_hcv_subtype_categ),],
-                        .variables=c("runname", "sample", "snum", "act_hcv_subtype", "act_hcv_subtype_categ"),
+                        .variables=c("runname", "sample", "snum", "subtype", "act_hcv_subtype_categ"),
                         .fun=function(x) {
                           data.frame(
-                            act_hcv_subtype_perc = sum(x$hcvperc, na.rm=TRUE)
+                            act_hcv_subtype_perc = sum(x$subtype_perc, na.rm=TRUE)
                           )
                         })
 
@@ -259,9 +239,9 @@ major_subtypes <- ddply(.data=slice_hits[!is.na(slice_hits$act_hcv_subtype_categ
 
 # Check if the actual subtype percentage is within +/- MAX_SUBTYPE_DIFF_PERC of the expected
 check_subtype <- merge(x=expected_mixture,
-                       y=subset(major_subtypes, !is.na(major_subtypes$act_hcv_subtype)),
+                       y=subset(major_subtypes, !is.na(major_subtypes$subtype)),
                        by.x=c("runname", "sample", "subtype"),
-                       by.y=c("runname", "sample", "act_hcv_subtype"),
+                       by.y=c("runname", "sample", "subtype"),
                        all.x=TRUE, all.y=FALSE)
 
 check_gtype_subtype <- merge(x=subset(check_subtype, select=-snum),
@@ -315,7 +295,7 @@ sample_gtype_subtype_result$act_hcv_subtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_subtypes$act_hcv_subtype_categ))
-getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
+getPalette <- colorRampPalette(brewer.pal(min(8, colourCount) , "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_subtypes,
               aes(x=sample, weight=act_hcv_subtype_perc, fill=act_hcv_subtype_categ)) + 
   geom_bar(color="black") + 
@@ -350,4 +330,37 @@ kable(sort_major_subtypes_categ,
       row.names=FALSE,
       col.names=c("Sample", "Sample Num", "Subtype", "% HCV Population"))
 
+
+#' Coverage Per Target Region
+#' ==================================
+#' 
+#' **Read only included as a hit if both mates covered the entire the target region and 
+#' merged mates contain less than 20% N's after masking for low quality and discordant bases.**
+#'
+#' 
+# 1-based coordinates for labelling
+#+ fig.width=20, fig.height=10
+coord_cover <- ddply(.data=subtype_slice_hits,
+                     .variables=c("runname", "sample", "snum", "gene", "start", "end"),
+                     .fun=function(x) {
+                       data.frame(cover=sum(x$count, na.rm=TRUE),
+                                  coord=paste0(x$gene, ":", x$start+1, "-", x$end))
+                     })
+
+colourCount <-  length(unique(coord_cover$coord))
+getPalette <- colorRampPalette(brewer.pal(min(8, colourCount) , "Accent"))  # returns a function that takes number of colors as argument
+fig <- ggplot(coord_cover, aes(x=sample, y=cover, color=coord)) + 
+  geom_point(size=10) + 
+  scale_color_manual(name="Target Coordinates", values = getPalette(colourCount)) + 
+  ggtitle("Coverage for Target Coordinates") + 
+  xlab("Sample") + 
+  ylab("Coverage") +   
+  theme(strip.text.x = element_text(size=rel(1)), 
+        axis.title=element_text(size=rel(2)), 
+        axis.text=element_text(size=rel(1.2), angle=45, hjust=1),
+        plot.title=element_text(size=rel(2)),
+        legend.title=element_text(size=rel(2)),
+        legend.text=element_text(size=rel(1.5)),
+        legend.position="top")
+print(fig)
 

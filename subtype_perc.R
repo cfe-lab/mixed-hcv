@@ -25,6 +25,16 @@ options(width=200)
 # runname <- "150802_M01841_0154_000000000-AE8FV"
 
 
+args <- commandArgs(trailingOnly = TRUE)
+print(args)
+
+
+subtype_hits_csv <- args[2]
+expected_mixture_csv <- args[3]
+runname <- args[4]
+
+
+
 subtype_hits <- read.table(subtype_hits_csv, sep=",", header=TRUE)
 expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE)
 expected_mixture$gtype <- as.factor(as.character(expected_mixture$gtype))

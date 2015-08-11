@@ -13,16 +13,16 @@ library(RColorBrewer)
 MIN_SUBTYPE_REPORT_PERC <- 1
 MIN_GTYPE_REPORT_PERC <- 1
 
-MAX_GTYPE_DIFF_PERC <- 10
-MAX_SUBTYPE_DIFF_PERC <- 10
+MAX_GTYPE_DIFF_PERC <- 30
+MAX_SUBTYPE_DIFF_PERC <- 30
 
 opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error= TRUE, warning = FALSE, message=FALSE, echo=FALSE)
 options(width=200)
 
 
-# subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150802_M01841_0154_000000000-AE8FV.csv"
-# expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150802_M01841_0154_000000000-AE8FV.expected_mixture.csv"
-# runname <- "150802_M01841_0154_000000000-AE8FV"
+subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150802_M01841_0154_000000000-AE8FV.csv"
+expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150802_M01841_0154_000000000-AE8FV.expected_mixture.csv"
+runname <- "150802_M01841_0154_000000000-AE8FV"
 
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -222,6 +222,7 @@ sort_major_gtypes_categ <- subset(sort_major_gtypes_categ, select=-c(runname))
 #+ results="asis"
 kable(sort_major_gtypes_categ, 
       format="html",
+      digits=1,
       caption="Sample Genotype Breakdown",
       row.names=FALSE,
       col.names=c("Sample", "Sample Num", "Genotype", "% HCV Population"))
@@ -342,6 +343,7 @@ sort_major_subtypes_categ <- subset(sort_major_subtypes_categ, select=-c(runname
 #+ results="asis"
 kable(sort_major_subtypes_categ, 
       format="html",
+      digits=1,
       caption="Sample Subtype Breakdown",
       row.names=FALSE,
       col.names=c("Sample", "Sample Num", "Subtype", "% HCV Population"))
@@ -368,4 +370,35 @@ fig <- ggplot(hits, aes(x=sample, weight=count, fill=category)) +
         legend.text=element_text(size=rel(1.5)),
         legend.position="top")
 print(fig)
-  
+
+category_sum <- ddply(.data=hits,
+                      .variables=c("runname", "sample", "snum"),
+                      .fun=function(x) {
+                        data.frame(
+                          total.human=sum(x$count[x$category=="Human"], na.rm=TRUE),                          
+                          total.hcv=sum(x$count[x$category=="HCV"], na.rm=TRUE),
+                          total.unal=sum(x$count[x$category=="Unaligned"], na.rm=TRUE))
+                      })
+
+total_hcv_category <- merge(x=total_hcv,
+                            y=category_sum,
+                            by.x=c("runname", "sample", "snum"),
+                            by.y=c("runname", "sample", "snum"))
+
+
+total_hcv_category$total.all <- total_hcv_category$total.human + total_hcv_category$total.hcv  + total_hcv_category$total.unal
+if (sum(total_hcv_category$total.human + total_hcv_category$total.hcv  + total_hcv_category$total.unal  != total_hcv_category$total) > 0) {
+  stop("each category total does not sum up to total reads")
+}
+total_hcv_category$perc.human <- total_hcv_category$total.human * 100/total_hcv_category$total
+total_hcv_category$perc.hcv <- total_hcv_category$total.hcv * 100/total_hcv_category$total
+total_hcv_category$perc.unal <- total_hcv_category$total.unal * 100/total_hcv_category$total
+
+
+#+ results="asis"
+kable(subset(total_hcv_category, select=c(runname, sample, snum, total, total.hcv, total.human, total.unal, perc.hcv, perc.human, perc.unal)), 
+      format="html",
+      digits=1,
+      caption="Sample Species Breakdown",
+      row.names=FALSE,
+      col.names=c("Run", "Sample", "Sample Num", "Sample Reads", "HCV Hits", "Human Hits", "Unaligned", "% HCV", "% Human", "% Unaligned"))

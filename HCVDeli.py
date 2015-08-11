@@ -233,7 +233,7 @@ class HCVDeli():
                                                               ("HCV-1a-EU482836", 6189, 7529)]:
                 if rname == indel_ref and pos >= indel_ref_start and endpos <= indel_ref_end:
                     total_indel_ignore += 1
-                    continue
+                    
 
             # Once we loop, we lose track of this mate.  If the other mate is unmapped, we never output this mate.
             # I.e.  we exclude single mates

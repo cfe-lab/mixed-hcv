@@ -36,7 +36,7 @@ runname <- args[4]
 
 
 
-expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE)
+expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE, na.strings=c(""))
 expected_mixture$gtype <- as.factor(as.character(expected_mixture$gtype))
 
 
@@ -85,8 +85,7 @@ slice_hits <- adply(.data=slice_hits,
                 if (x$subtype == "" | grepl("hg38", x$subtype) == TRUE) {
                   act_hcv_subtype_categ <- ""
                 } else if (x$subtype_perc < MIN_SUBTYPE_REPORT_PERC) {
-                  act_hcv_subtype_categ <- "Any Subtype < 1% in Sample"
-                  act_hcv_subtype <- as.character(x$subtype)
+                  act_hcv_subtype_categ <- "Any Subtype < 1% in Sample"                  
                 } else {
                   act_hcv_subtype_categ <- as.character(x$subtype)
                 
@@ -106,13 +105,24 @@ slice_hits <- adply(.data=slice_hits,
                 )
               })
 
+# Reorder levels, adply screws up level ordering
+slice_hits$act_hcv_subtype_categ[slice_hits$act_hcv_subtype_categ == ""] <- NA
+slice_hits$act_hcv_subtype_categ <- as.factor(slice_hits$act_hcv_subtype_categ)
+slice_hits$act_hcv_subtype_categ <- factor(slice_hits$act_hcv_subtype_categ,
+                                     levels=sort(levels(slice_hits$act_hcv_subtype_categ)))
 
-#' HCV Mixture Results For Run `r runname`
+slice_hits$act_hcv_gtype[slice_hits$act_hcv_gtype == ""] <- NA
+slice_hits$act_hcv_gtype <- as.factor(slice_hits$act_hcv_gtype)
+slice_hits$act_hcv_gtype <- factor(slice_hits$act_hcv_gtype,
+                             levels=sort(levels(slice_hits$act_hcv_gtype)))
+
+
+#' Target Region HCV Mixture Results For Run `r runname`
 #' ===========================================================
 #' 
 #' 
 
-#' HCV Population Genotype Percentages For Run `r runname`
+#' Target Region HCV Population Genotype Percentages For Run `r runname`
 #' -------------------------------------------------------
 #'
 #'
@@ -121,6 +131,8 @@ slice_hits <- adply(.data=slice_hits,
 #' **Max difference between expected and actual genotype % = `r MAX_GTYPE_DIFF_PERC`**
 #' 
 #' **Total % of unexpected genotypes that appear in sample must be less than the smallest expected genotype %**
+#' 
+#' **All expected genotypes must be detected at non-zero percentages.**
 #' 
 #' 
 # Aggregate by major hcv genotype  (ignore nonhcv hits).  Genotypes < MIN_REPORT_PERC % are collapsed into "other" genotype
@@ -160,10 +172,16 @@ sample_gtype_result <- ddply(.data=check_gtype,
                                unexpected_gtype_perc <- 100 - sum(x$act_hcv_gtype_perc, na.rm=TRUE)
                                total_gtype_offrange <- sum(x$diff_gtype_perc > MAX_GTYPE_DIFF_PERC, na.rm=TRUE)
                                
+                               total_nonexist_expected_gtype <- sum(!is.na(x$gtype_perc) & x$gtype_perc != "" & x$gtype_perc > 0 &
+                                                                      (is.na(x$act_hcv_gtype_perc) | x$act_hcv_gtype_perc == 0))
+                               
                                data.frame(
                                  unexpected_gtype_perc = unexpected_gtype_perc,
                                  total_gtype_offrange = total_gtype_offrange,
-                                 is_gtype_ok=ifelse(total_gtype_offrange > 0 | unexpected_gtype_perc > min(x$gtype_perc),
+                                 total_nonexist_expected_gtype = total_nonexist_expected_gtype,
+                                 is_gtype_ok=ifelse(total_gtype_offrange > 0 | 
+                                                      unexpected_gtype_perc > min(x$gtype_perc) | 
+                                                      total_nonexist_expected_gtype > 0,
                                                     "Wrong", 
                                                     "Right"))
                              })
@@ -211,7 +229,7 @@ kable(sort_major_gtypes_categ,
       col.names=c("Sample", "Sample Num", "Genotype", "% HCV Population"))
 
 #'
-#' HCV Population Subtype Percentages for Run `r runname`
+#' Target Region HCV Population Subtype Percentages for Run `r runname`
 #' -------------------------------------------------------
 #' 
 #' **Thresholds for determining if subtype mixture call is accurate:** 
@@ -220,10 +238,14 @@ kable(sort_major_gtypes_categ,
 #' 
 #' **Total % of unexpected genotypes that appear in sample must be less than the smallest expected genotype %**
 #' 
+#' **All expected genotypes must be detected at non-zero percentages.**
 #' 
 #' **Max difference between expected and actual subtypes % = `r MAX_SUBTYPE_DIFF_PERC`**
 #' 
 #' **Total % of unexpected subtypes that appear in sample must be less than the smallest expected subtype or genotype %**
+#' 
+#' **All expected subtypes must be detected at non-zero percentages.**
+#' 
 #' 
 
 # Aggregate by major hcv subtype  (ignore nonhcv hits).  Subtypes < 1 % are collapsed into "other" subtype.
@@ -269,12 +291,17 @@ sample_subtype_result <- ddply(.data=check_gtype_subtype,
                                  
                                  total_subtype_offrange <- sum(x$diff_subtype_perc > MAX_SUBTYPE_DIFF_PERC, na.rm=TRUE)
                                  
+                                 total_nonexist_expected_subtype <- sum(!is.na(x$subtype_perc) & x$subtype_perc != "" & x$subtype_perc > 0 &
+                                                                          (is.na(x$act_hcv_subtype_perc) | x$act_hcv_subtype_perc == 0))
                                  data.frame(
                                    
                                    unexpected_subtype_gtype_perc = unexpected_subtype_gtype_perc,
                                    total_subtype_offrange = total_subtype_offrange,
+                                   total_nonexist_expected_subtype = total_nonexist_expected_subtype,
                                    
-                                   is_subtype_ok=ifelse(total_subtype_offrange > 0 | unexpected_subtype_gtype_perc > min(x$gtype_perc, x$subtype_perc, na.rm=TRUE),
+                                   is_subtype_ok=ifelse(total_subtype_offrange > 0 | 
+                                                          unexpected_subtype_gtype_perc > min(x$gtype_perc, x$subtype_perc, na.rm=TRUE) |
+                                                          total_nonexist_expected_subtype > 0,
                                                         "Wrong", 
                                                         "Right"))
                                })
@@ -334,8 +361,13 @@ kable(sort_major_subtypes_categ,
 #' Coverage Per Target Region
 #' ==================================
 #' 
-#' **Read only included as a hit if both mates covered the entire the target region and 
-#' merged mates contain less than 20% N's after masking for low quality and discordant bases.**
+#' **Read only included as a hit if:**
+#' 
+#' **- both mates covered the entire the target region**
+#' 
+#' **- merged mates contain less than 20% N's after masking for low quality and discordant bases**
+#' 
+#' **- alignment was the best (primary) alignment for the read and didn't hit multiple references**
 #'
 #' 
 # 1-based coordinates for labelling

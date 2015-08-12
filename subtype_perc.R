@@ -20,9 +20,9 @@ opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error=
 options(width=200)
 
 
-subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/150802_M01841_0154_000000000-AE8FV.csv"
-expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150802_M01841_0154_000000000-AE8FV.expected_mixture.csv"
-runname <- "150802_M01841_0154_000000000-AE8FV"
+# subtype_hits_csv <- "/media/macdatafile/mixed-hcv/gb-ref+hg38_v2/q0.150804_M01841_0155_000000000-AE95T.csv"
+# expected_mixture_csv <- "/media/macdatafile/mixed-hcv/expected_mixture/150804_M01841_0155_000000000-AE95T.expected_mixture.csv"
+# runname <- "150804_M01841_0155_000000000-AE95T"
 
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -36,7 +36,7 @@ runname <- args[4]
 
 
 subtype_hits <- read.table(subtype_hits_csv, sep=",", header=TRUE)
-expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE)
+expected_mixture <- read.table(expected_mixture_csv, sep=",", header=TRUE, na.strings=c(""))
 expected_mixture$gtype <- as.factor(as.character(expected_mixture$gtype))
 
 
@@ -99,8 +99,8 @@ hits <- adply(.data=hits,
                   act_hcv_gtype <- substr(x$subtype, 1, 1)
                 }
                 
-                data.frame(act_hcv_gtype=act_hcv_gtype,
-                           
+                data.frame(
+                          act_hcv_gtype=act_hcv_gtype,                           
                            act_hcv_subtype=act_hcv_subtype,
                            act_hcv_subtype_categ=act_hcv_subtype_categ,
                            category=category
@@ -140,6 +140,7 @@ hits$act_hcv_gtype <- factor(hits$act_hcv_gtype,
 #' 
 #' **Total % of unexpected genotypes that appear in sample must be less than the smallest expected genotype %**
 #' 
+#' **All expected genotypes must be detected at non-zero percentages.**
 #' 
 # Aggregate by major hcv genotype  (ignore nonhcv hits).  Genotypes < MIN_REPORT_PERC % are collapsed into "other" genotype
 major_gtypes <- ddply(.data=hits[!is.na(hits$act_hcv_gtype),],
@@ -176,10 +177,16 @@ sample_gtype_result <- ddply(.data=check_gtype,
                                 unexpected_gtype_perc <- 100 - sum(x$act_hcv_gtype_perc, na.rm=TRUE)
                                 total_gtype_offrange <- sum(x$diff_gtype_perc > MAX_GTYPE_DIFF_PERC, na.rm=TRUE)
                                 
+                                total_nonexist_expected_gtype <- sum(!is.na(x$gtype_perc) & x$gtype_perc != "" & x$gtype_perc > 0 &
+                                                                       (is.na(x$act_hcv_gtype_perc) | x$act_hcv_gtype_perc == 0))
+                                
                                 data.frame(
                                   unexpected_gtype_perc = unexpected_gtype_perc,
                                   total_gtype_offrange = total_gtype_offrange,
-                                  is_gtype_ok=ifelse(total_gtype_offrange > 0 | unexpected_gtype_perc > min(x$gtype_perc),
+                                  total_nonexist_expected_gtype = total_nonexist_expected_gtype,
+                                  is_gtype_ok=ifelse(total_gtype_offrange > 0 | 
+                                                       unexpected_gtype_perc > min(x$gtype_perc) | 
+                                                       total_nonexist_expected_gtype > 0,
                                                         "Wrong", 
                                                         "Right"))
                               })
@@ -191,7 +198,7 @@ sample_gtype_result$act_hcv_gtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_gtypes$act_hcv_gtype_categ))
-getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
+getPalette <- colorRampPalette(brewer.pal(min(colourCount, 8), "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_gtypes,   
               aes(x=sample, weight=act_hcv_gtype_perc, fill=act_hcv_gtype_categ)) + 
   geom_bar(color="black") + 
@@ -237,12 +244,15 @@ kable(sort_major_gtypes_categ,
 #' 
 #' **Total % of unexpected genotypes that appear in sample must be less than the smallest expected genotype %**
 #' 
+#' **All expected genotypes must be detected at non-zero percentages.**
 #' 
 #' **Max difference between expected and actual subtypes % = `r MAX_SUBTYPE_DIFF_PERC`**
 #' 
 #' **Total % of unexpected subtypes that appear in sample must be less than the smallest expected subtype or genotype %**
 #' 
-
+#' **All expected subtypes must be detected at non-zero percentages.**
+#' 
+#' 
 # Aggregate by major hcv subtype  (ignore nonhcv hits).  Subtypes < 1 % are collapsed into "other" subtype.
 major_subtypes <- ddply(.data=hits[!is.na(hits$act_hcv_subtype_categ),],
                               .variables=c("runname", "sample", "snum", "act_hcv_subtype", "act_hcv_subtype_categ"),
@@ -286,12 +296,17 @@ sample_subtype_result <- ddply(.data=check_gtype_subtype,
                         
                          total_subtype_offrange <- sum(x$diff_subtype_perc > MAX_SUBTYPE_DIFF_PERC, na.rm=TRUE)
                          
+                         total_nonexist_expected_subtype <- sum(!is.na(x$subtype_perc) & x$subtype_perc != "" & x$subtype_perc > 0 &
+                                                                (is.na(x$act_hcv_subtype_perc) | x$act_hcv_subtype_perc == 0))
                          data.frame(
                            
                            unexpected_subtype_gtype_perc = unexpected_subtype_gtype_perc,
                            total_subtype_offrange = total_subtype_offrange,
+                           total_nonexist_expected_subtype = total_nonexist_expected_subtype,
                            
-                           is_subtype_ok=ifelse(total_subtype_offrange > 0 | unexpected_subtype_gtype_perc > min(x$gtype_perc, x$subtype_perc, na.rm=TRUE),
+                           is_subtype_ok=ifelse(total_subtype_offrange > 0 | 
+                                                  unexpected_subtype_gtype_perc > min(x$gtype_perc, x$subtype_perc, na.rm=TRUE) |
+                                                  total_nonexist_expected_subtype > 0,
                                         "Wrong", 
                                         "Right"))
                        })
@@ -312,7 +327,7 @@ sample_gtype_subtype_result$act_hcv_subtype_perc <- NA
 
 #+ fig.width=20, fig.height=10
 colourCount <-  length(unique(major_subtypes$act_hcv_subtype_categ))
-getPalette <- colorRampPalette(brewer.pal(8, "Accent"))  # returns a function that takes number of colors as argument
+getPalette <- colorRampPalette(brewer.pal(min(colourCount, 8), "Accent"))  # returns a function that takes number of colors as argument
 fig <- ggplot(major_subtypes,
             aes(x=sample, weight=act_hcv_subtype_perc, fill=act_hcv_subtype_categ)) + 
   geom_bar(color="black") + 

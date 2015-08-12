@@ -432,7 +432,7 @@ class HCVDeli():
 
 
             for i, f1 in enumerate(files):
-                if i % nprocs != my_rank:
+                if i % nprocs != my_rank or my_rank >= len(files):
                     continue
                 f2 = f1.replace('_R1_', '_R2_')
 

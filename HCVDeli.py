@@ -277,6 +277,9 @@ class HCVDeli():
             # check where this read mapped
             read_start = int(pos)  # 1based coord wrt subtype full genome  corresponding to read start
             read_end = read_start + len(mseq.strip('-'))  # 1based coord wrt subtype full genome corresponding to read end + 1
+            if rname not in self.coords:
+                print "Read %s didn't have a corresponding map" % rname
+                continue
             coords = self.coords[rname]
             if read_end < coords['Core'][0] or read_start > coords['NS5b'][1]:
                 # read falls outside of ORF

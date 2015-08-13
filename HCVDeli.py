@@ -209,6 +209,9 @@ class HCVDeli():
             if not helper.is_primary(flag) or helper.is_chimeric(flag):
                 continue
 
+            if mapq < self.min_mapq:
+                continue
+
             if is_show_progress:  # Increment progress after checking for chimeric/secondary alignments otherwise, can have more alignments than reads.
                 progress += 1
                 if progress % 5000 == 0:

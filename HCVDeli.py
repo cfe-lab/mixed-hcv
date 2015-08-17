@@ -24,8 +24,9 @@ class HCVDeli():
     :param str coords_file:  filepath to comma-separated file with cols:  subtype ref name, gene, 0based start nuc coord wrt subtype gene, 0based end nuc coord+1 wrt subtype gene
     :param str targets_file:  filepath to comma-separated target regions file with cols:  gene, 0based nuc start coord wrt H77 gene, 0based nuc end coord+1 wrt H77 gene
             colnames:  Gene,Startnuc_0based,AfterEndNuc_0based
+    :param float min_target_width:  fraction of target region width that must be covered by read in order to be considered a hit.  Value in [0.0, 1.0]
     """
-    def __init__(self, x, p, minlen, minq, mins, coords_file='data/gb-ref2.coords', targets_file=None):
+    def __init__(self, x, p, minlen, minq, mins, min_target_width, coords_file='data/gb-ref2.coords', targets_file=None):
 
         if not targets_file:
             # H77 nuc gene coordinates, 0 based.  Start pos, end pos + 1
@@ -53,6 +54,7 @@ class HCVDeli():
         self.min_match_len = minlen
         self.min_mapq = minq
         self.min_score = mins
+        self.min_target_width = min_target_width
 
         # load reference gene coordinates
         handle = open(coords_file, 'rU')
@@ -300,8 +302,12 @@ class HCVDeli():
                     # adjust gene coordinates to genome coordinates.  Assume no indels wrt H77
                     genome_left = gene_left + left  # 0based nuc coordinates wrt subtype full genome corresponding to H77 target start
                     genome_right = gene_right + left # 0based nuc coordinates wrt subtype full genome corresponding to H77 target end + 1
-                    if read_start > genome_left + 1 or read_end < genome_right+1:
-                        # full coverage of target not possible
+
+                    # If the read begins after the target region or ends before the target region, read_slice_size will be negative.
+                    read_slice_size = min(genome_right, read_end-1) - max(genome_left, read_start-1)
+                    target_slice_size = genome_right - genome_left
+                    if read_slice_size / float(target_slice_size) < self.min_target_width:
+                        # merged read does not cover the minimum required width of the target region
                         continue
 
                     slice = mseq[genome_left:genome_right]  # mseq should be left-padded wrt subtype full genome
@@ -313,7 +319,7 @@ class HCVDeli():
         return slices
 
 
-    def run(self, f1, f2, handle, log, runname='', complete=[], is_show_progress=False):
+    def run(self, f1, f2, handle, log, runname='', complete={}, is_show_progress=False, min_target_width_cover=1.0):
         """
         Analyze a pair of FASTQ files.
         :param f1: FASTQ R1 input
@@ -472,12 +478,13 @@ def main():
     parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=100)
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
+    parser.add_argument('-min_target_width', type=float, help='minimum fraction of target width covered to be considered a hit', default=1.0)
     parser.add_argument('-targetfile', help='<input> file containing list of folders.  If unspecified, uses predetermined 250bp gene regions best for genotyping')
 
     args = parser.parse_args()
     if not ((args.R1 and args.R2) or args.path or args.pathlist):
         parser.error('Must set one of the following: {-R1 and -R2, -path, -pathlist}.')
-    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, targets_file=args.targetfile)
+    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, min_target_width=args.min_target_width, targets_file=args.targetfile)
 
     paths = []
     if args.pathlist:

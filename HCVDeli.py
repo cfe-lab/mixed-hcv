@@ -187,23 +187,24 @@ class HCVDeli():
 
         # Check to see if we have a cache, and use it if we do
         if cache is None or not cache.check_sam(fastq1, fastq2, flags):
-            bowtie2_iter = bowtie2.align_paired(settings.bowtie2_version, self.refpath, fastq1, fastq2, self.bowtie_threads, flags=flags)
+            print "miss cache"
+            bowtie2_iter = bowtie2.align_paired(version=settings.bowtie2_version,
+                                            refpath=self.refpath,
+                                            fastq1=fastq1,
+                                            fastq2=fastq2, nthreads=self.bowtie_threads,
+                                            flags=flags)
+
 
             if cache is not None:
                 cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
         else:
+            print "hit cache"
             bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
             close_sam = True
 
 
         # We don't care about reads where only single mate maps
         # We don't care about reads where mates map to different reference
-        bowtie2_iter = bowtie2.align_paired(version=settings.bowtie2_version,
-                                            refpath=self.refpath,
-                                            fastq1=fastq1,
-                                            fastq2=fastq2, nthreads=self.bowtie_threads,
-                                            flags=flags)
-
 
 
         progress = 0
@@ -485,12 +486,12 @@ class HCVDeli():
                     runname = os.path.basename(os.path.dirname(os.path.abspath(f1)))
 
                 sample, snum = os.path.basename(f1).split('_')[:2]
-                out_filename = output + "." + sample  + "_" + snum + ".csv"
+                out_filename = output + "." + sample  + "_" + snum
                 cache = None
 
                 # If we're allowed to cache, check to see if the result is in the cache 
                 if self.cache_path is not None:
-                    cache = helper.Cache(runname, self.min_mapq, self.refpath, "deli", self.cache_path)
+                    cache = helper.Cache(runname, self.min_mapq, self.refpath, "deli", self.min_target_width, self.cache_path)
 
                     if cache.check_result(out_filename):
                         cache.decache_result(out_filename)

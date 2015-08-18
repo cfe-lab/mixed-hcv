@@ -293,7 +293,7 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
 
 
 class Cache(object):
-    def __init__(self, runname, quality, reference, full_or_deli, path):
+    def __init__(self, runname, quality, reference, full_or_deli, min_width, path):
         """
         Initializes the cache of aligned files and result CSVs
 
@@ -309,6 +309,7 @@ class Cache(object):
         self.reference = os.path.basename(reference)
         self.cache_path = os.path.abspath(path)
         self.full_or_deli = full_or_deli
+        self.min_width = min_width
 
         if full_or_deli not in ["full", "deli"]:
             raise "Unknown run type!"
@@ -327,7 +328,7 @@ class Cache(object):
             os.makedirs(self.sam_dir)
 
         self.result_dir = os.path.join(self.cache_path, runname, "results", \
-            self.reference, ("q%d" % self.quality), self.full_or_deli)
+            self.reference, ("q%d" % self.quality), ("mw%d" % self.min_width), self.full_or_deli)
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
 

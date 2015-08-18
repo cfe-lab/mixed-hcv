@@ -11,6 +11,7 @@ import subprocess
 import re
 import bowtie2
 import csv
+import shutil
 from datetime import datetime
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
@@ -116,7 +117,7 @@ def count_zipped_file_lines(path):
 
 
 def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score, bowtie2_version,
-           is_show_progress=False):
+           is_show_progress=False, cache=None):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
@@ -138,7 +139,18 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     mapqs = {}
 
     # stream STDOUT from bowtie2
-    bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=['--quiet', '--local'])
+    flags = ['--quiet', '--local']
+
+    # Check to see if we have a cache, and use it if we do
+    if cache is None or not cache.check_sam(fastq1, fastq2, flags):
+        bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
+
+        if cache is not None:
+            bowtie2_iter = list(bowtie2_iter)
+            cache.cache_sam(fastq1, fastq2, flags, bowtie2_iter)
+    else:
+        bowtie2_iter = cache_path.get_sam(fastq1, fastq2, flags)
+
 
     for line in bowtie2_iter:
         if line.startswith('@'):
@@ -268,3 +280,69 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
         mapq_csv_writer.writerow(("qname", "flag", "mapq"))
         for qname, flag in mapqs:
             mapq_csv_writer.writerow((qname, flag, mapqs[(qname, flag)]))
+
+
+class Cache(object):
+    def __init__(self, runname, quality, reference, path):
+        """
+        Initializes the cache of aligned files and result CSVs
+
+        :param runname: The name of the run (YYMMDD_M????_0???_000000)
+        :param quality: The cutoff aligment quality for this 
+        :param reference: Path to reference
+        :param path: Path to cache folder
+        """
+
+        # Setup local vars
+        self.runname = runname
+        self.quality = quality
+        self.reference = os.path.basename(reference)
+        self.cache_path = os.path.abspath(path)
+
+        # Check to see if cache folders exist
+        # if not, create them
+        if not os.path.isdir(self.cache_path):
+            os.makedirs(self.cache_path)
+
+        self.run_dir = os.path.join(self.cache_path, runname)
+        if not os.path.isdir(self.run_dir):
+            os.makedirs(self.run_dir)
+
+        self.sam_dir = os.path.join(self.cache_path, runname, "sam", reference)
+        if not os.path.isdir(self.sam_dir):
+            os.makedirs(self.sam_dir)
+
+        self.result_dir = os.path.join(self.cache_path, runname, "results", \
+            "q%d-%s" % (quality, reference))
+        if not os.path.isdir(self.result_dir):
+            os.makedirs(self.result_dir)
+
+    @staticmethod
+    def _get_key(fastq1, fastq2, flags):
+        return "F_%s_R%s_%s.sam" % (fastq1, fastq2, ''.join(flags))
+
+    def check_sam(self, fastq1, fastq2, flags):
+        key = Cache._get_key(fastq1, fastq2, flags)
+        return os.path.exists(os.path.join(self.sam_dir, key))
+
+    def cache_sam(self, fastq1, fastq2, flags, content):
+        key = Cache._get_key(fastq1, fastq2, flags)
+        with open(os.path.join(self.sam_dir, key), "w") as fp:
+            fp.write(content)
+
+    def get_sam(self, fastq1, fastq2, flags):
+        key = Cache._get_key(fastq1, fastq2, flags)
+        lines = []
+        with open(os.path.join(self.sam_dir, key), "r") as fp:
+            lines = fp.readlines()
+        return lines
+
+    def check_result(self, result_csv):
+        result_name = os.path.basename(result_csv)
+        return os.path.exists(os.path.join(self.result_dir, result_name))
+
+    def cache_result(self, result_csv):
+        result_path = os.path.abspath(result_csv)
+        result_name = os.path.basename(result_csv)
+        shutil.copy(result_path, os.path.join(self.result_dir, result_name))
+

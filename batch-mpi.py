@@ -35,6 +35,7 @@ def main():
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
     parser.add_argument("--mapqfile", help="<output CSV> file containing mapping quality scores (optional)")
+    parser.add_argument("--cache", help="the cache folder that holds all results and sams", default=None)
 
     args = parser.parse_args()
     
@@ -56,6 +57,10 @@ def main():
     except OSError:
         raise RuntimeError('bowtie2 not found; check if it is installed and in $PATH\n')
     
+    # Instantiate the cache object
+    cache = None
+    if args.cache is not None:
+        cache = helper.Cache(args.runname, args.quality, args.x, args.cache)
     
     complete = {}
     # new output file
@@ -103,6 +108,11 @@ def main():
             if args.mapqfile:
                 mapq_filename = args.mapqfile + "." + os.path.basename(f1).split("_L001_R1")[0]
             logfilename = args.log+'.'+str(my_rank)
+
+
+            if cache is not None and cache.check_result(fastq_output_csv):
+                continue
+
             with open(fastq_output_csv, 'w') as fh_out_csv, open(logfilename, 'a') as fh_log:
 
                 mapq_outfile = None
@@ -115,13 +125,16 @@ def main():
                     helper.mixed_hcv(fastq1=f1, fastq2=f2, outpath=fh_out_csv, refpath=args.x, bowtie2_version=BOWTIE2_VERSION,
                                      min_match_len=args.minlen, min_mapq=args.minq, min_score=args.mins,
                                      n_threads=args.p, is_show_progress=True, runname=runname, sample=sample, snum=snum,
-                                     mapq_outfile=mapq_outfile)
+                                     mapq_outfile=mapq_outfile, cache=cache)
 
                     fh_log.write('[%s] end processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
 
                 finally:
                     if mapq_outfile:
                         mapq_outfile.close()
+
+            if cache is not None:
+                cache.cache_result(fastq_output_csv)
 
 
 if __name__ == '__main__':

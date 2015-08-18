@@ -142,6 +142,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     flags = ['--quiet', '--local']
 
     cache_file = None
+    close_sam = False
 
     # Check to see if we have a cache, and use it if we do
     if cache is None or not cache.check_sam(fastq1, fastq2, flags):
@@ -151,6 +152,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
             cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
     else:
         bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
+        close_sam = True
 
 
     for line in bowtie2_iter:
@@ -229,6 +231,8 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     keys.sort()
     if cache_file is not None:
         cache_file.close()
+    if close_sam:
+        bowtie2_iter.close()
 
     return counts, rejects, mapqs
 
@@ -343,9 +347,7 @@ class Cache(object):
     def get_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)
         lines = []
-        with open(os.path.join(self.sam_dir, key), "r") as fp:
-            lines = fp.readlines()
-        return lines
+        return open(os.path.join(self.sam_dir, key), "r")
 
     def check_result(self, result_csv):
         result_name = os.path.basename(result_csv)

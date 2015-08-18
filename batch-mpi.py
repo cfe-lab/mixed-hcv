@@ -35,7 +35,7 @@ def main():
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
     parser.add_argument("--mapqfile", help="<output CSV> file containing mapping quality scores (optional)")
-    parser.add_argument("--cache", help="the cache folder that holds all results and sams", default=None)
+    parser.add_argument("--cache", help="the cache folder that holds all results and sam files", default=None)
 
     args = parser.parse_args()
     
@@ -60,7 +60,7 @@ def main():
     # Instantiate the cache object
     cache = None
     if args.cache is not None:
-        cache = helper.Cache(args.runname, args.minq, args.x, args.cache)
+        cache = helper.Cache(args.runname, args.minq, args.x, "full", args.cache)
     
     complete = {}
     # new output file

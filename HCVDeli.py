@@ -26,7 +26,7 @@ class HCVDeli():
             colnames:  Gene,Startnuc_0based,AfterEndNuc_0based
     :param float min_target_width:  fraction of target region width that must be covered by read in order to be considered a hit.  Value in [0.0, 1.0]
     """
-    def __init__(self, x, p, minlen, minq, mins, min_target_width, coords_file='data/gb-ref2.coords', targets_file=None):
+    def __init__(self, x, p, minlen, minq, mins, min_target_width, coords_file='data/gb-ref2.coords', targets_file=None, cache_path=None):
 
         if not targets_file:
             # H77 nuc gene coordinates, 0 based.  Start pos, end pos + 1
@@ -55,6 +55,7 @@ class HCVDeli():
         self.min_mapq = minq
         self.min_score = mins
         self.min_target_width = min_target_width
+        self.cache_path = cache_path
 
         # load reference gene coordinates
         handle = open(coords_file, 'rU')
@@ -164,7 +165,7 @@ class HCVDeli():
         return mseq
 
 
-    def align(self, fastq1, fastq2, is_show_progress=False):
+    def align(self, fastq1, fastq2, is_show_progress=False, cache=None):
         """
         Process SAM output as it is streamed from bowtie2 to assign
         short reads to HCV genotypes/subtypes.
@@ -175,15 +176,33 @@ class HCVDeli():
             nrecords = helper.count_file_lines(fastq1) / 2
             print self.timestamp('total reads %d' % nrecords)
 
+        flags = ['--quiet', 
+                 '--local',
+                 '--no-unal',  # ignore any reads in which both mates don't map to ref
+                 '--no-mixed']  # mates must map to same reference])
+
+        # Instantiate a cache object
+        cache_file = None
+        close_sam = False
+
+        # Check to see if we have a cache, and use it if we do
+        if cache is None or not cache.check_sam(fastq1, fastq2, flags):
+            bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
+
+            if cache is not None:
+                cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
+        else:
+            bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
+            close_sam = True
+
+
         # We don't care about reads where only single mate maps
         # We don't care about reads where mates map to different reference
         bowtie2_iter = bowtie2.align_paired(version=settings.bowtie2_version,
                                             refpath=self.refpath,
                                             fastq1=fastq1,
                                             fastq2=fastq2, nthreads=self.bowtie_threads,
-                                            flags=['--quiet', '--local',
-                                                   '--no-unal',  # ignore any reads in which both mates don't map to ref
-                                                   '--no-mixed'])  # mates must map to same reference])
+                                            flags=flags)
 
 
 
@@ -197,6 +216,9 @@ class HCVDeli():
             if line.startswith('@'):
                 # skip header line
                 continue
+
+            if cache_file is not None:
+                cache_file.write(line)
 
             # FIXME: DEBUGGING
             #if progress > 100000:
@@ -259,6 +281,10 @@ class HCVDeli():
                 aligned.update({key: 0})
             aligned[key] += 1
 
+        if cache_file is not None:
+            cache_file.close()
+        if close_sam:
+            bowtie2_iter.close()
 
         print "ERROR: Total hit 1a ref with indel wrt H77  in NS5A - " + str(total_indel_ignore)
 
@@ -319,7 +345,7 @@ class HCVDeli():
         return slices
 
 
-    def run(self, f1, f2, handle, log, runname='', complete={}, is_show_progress=False, min_target_width_cover=1.0):
+    def run(self, f1, f2, handle, log, runname='', complete={}, is_show_progress=False, cache=None, min_target_width_cover=1.0):
         """
         Analyze a pair of FASTQ files.
         :param f1: FASTQ R1 input
@@ -344,7 +370,9 @@ class HCVDeli():
         logfile.write('[%s] start processing %s\n' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), filename))
         logfile.close()
 
-        aligned = self.align(f1, f2, is_show_progress=is_show_progress)
+        # Instantiate a cache object if we can
+
+        aligned = self.align(f1, f2, is_show_progress=is_show_progress, cache)
         slices = self.slice(aligned)
         # write out to file
         for gene, subsets in slices.iteritems():
@@ -400,7 +428,6 @@ class HCVDeli():
             from mpi4py import MPI
             my_rank = MPI.COMM_WORLD.Get_rank()
             nprocs = MPI.COMM_WORLD.Get_size()
-            output += '.' + str(my_rank)
             log += '.' + str(my_rank)
 
         except ImportError:
@@ -412,19 +439,20 @@ class HCVDeli():
 
         # enable script to restart from interrupted run
         complete = {}
-        if os.path.exists(output) and os.path.getsize(output):
-            handle = open(output, 'rU')
-            _ = handle.next()  # skip header
-            for line in handle:
-                runname, sample, snum = line.strip('\n').split(',')[:3]
-                complete.update({(runname, sample, snum): 1})
-            handle.close()
-            # re-open file for appending
-            handle = open(output, 'a')
-        else:
-            # new output file
-            handle = open(output, 'w')
-            handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
+
+        # if os.path.exists(output) and os.path.getsize(output):
+        #     handle = open(output, 'rU')
+        #     _ = handle.next()  # skip header
+        #     for line in handle:
+        #         runname, sample, snum = line.strip('\n').split(',')[:3]
+        #         complete.update({(runname, sample, snum): 1})
+        #     handle.close()
+        #     # re-open file for appending
+        #     handle = open(output, 'a')
+        # else:
+        #     # new output file
+        #     handle = open(output, 'w')
+        #     handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
 
         for path in paths:
             # check that the inputs exist
@@ -448,10 +476,32 @@ class HCVDeli():
                     continue
                 f2 = f1.replace('_R1_', '_R2_')
 
-                runname = os.path.basename(os.path.dirname(os.path.abspath(f1)))
-                self.run(f1, f2, handle, log, runname=runname, complete=complete, is_show_progress=True)
+                # Hopefully this will give us more consistency with our run names :S
+                try: 
+                    match = re.search('/([0-9]{6}_M[0-9]{5}_[0-9]{4}_[0-9]{9}-[A-Za-z0-9]{5})', os.path.abspath(f1))
+                    runname = m.group(1)
+                except:
+                    runname = os.path.basename(os.path.dirname(os.path.abspath(f1)))
 
-        handle.close()
+                sample, snum = os.path.basename(f1).split('_')[:2]
+                out_filename = output + "." + sample  + "_" + snum + ".csv"
+                cache = None
+
+                # If we're allowed to cache, check to see if the result is in the cache 
+                if self.cache_path is not None:
+                    cache = helper.Cache(runname, self.min_mapq, self.refpath, "deli", self.cache_path)
+
+                    if cache.check_result(out_filename):
+                        cache.decache_result(out_filename)
+                        continue
+
+                with open(out_filename, 'w') as handle:
+                    handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
+                    self.run(f1, f2, handle, log, runname=runname, complete=complete, is_show_progress=True, cache=cache)
+        
+                # Cache it
+                if self.cache_path is not None:
+                    cache.cache_result(fastq_output_csv)
 
 
 def main():
@@ -480,11 +530,13 @@ def main():
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
     parser.add_argument('-min_target_width', type=float, help='minimum fraction of target width covered to be considered a hit', default=1.0)
     parser.add_argument('-targetfile', help='<input> file containing list of folders.  If unspecified, uses predetermined 250bp gene regions best for genotyping')
+    parser.add_argument("--cache", help="the cache folder that holds all results and sam files", default=None)
 
     args = parser.parse_args()
     if not ((args.R1 and args.R2) or args.path or args.pathlist):
         parser.error('Must set one of the following: {-R1 and -R2, -path, -pathlist}.')
-    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, min_target_width=args.min_target_width, targets_file=args.targetfile)
+    deli = HCVDeli(x=args.x, p=args.p, minlen=args.minlen, minq=args.minq, mins=args.mins, min_target_width=args.min_target_width, targets_file=args.targetfile,
+        cache_path=args.cache)
 
     paths = []
     if args.pathlist:
@@ -500,7 +552,7 @@ def main():
         # no continuation of run for single file mode!
         handle = open(args.output, 'w')
         handle.write('runname,sample,snum,gene,start,end,rank,count,subtype,nucseq,aaseq\n')
-        deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log, is_show_progress=True)
+        deli.run(f1=args.R1, f2=args.R2, handle=handle, log=args.log, is_show_progress=True, cache=args.cache)
         handle.close()
     else:
         # this should never happen!

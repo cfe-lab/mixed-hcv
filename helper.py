@@ -293,11 +293,11 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
 
 
 class Cache(object):
-    def __init__(self, runname, quality, reference, path):
+    def __init__(self, runname, quality, reference, full_or_deli, path):
         """
         Initializes the cache of aligned files and result CSVs
 
-        :param runname: The name of the run (YYMMDD_M????_0???_000000)
+        :param runname: The name of the run (YYMMDD_M????_0???_000000-XXXXX)
         :param quality: The cutoff aligment quality for this 
         :param reference: Path to reference
         :param path: Path to cache folder
@@ -308,6 +308,10 @@ class Cache(object):
         self.quality = quality
         self.reference = os.path.basename(reference)
         self.cache_path = os.path.abspath(path)
+        self.full_or_deli = full_or_deli
+
+        if full_or_deli not in ["full", "deli"]:
+            raise "Unknown run type!"
 
         # Check to see if cache folders exist
         # if not, create them
@@ -323,13 +327,26 @@ class Cache(object):
             os.makedirs(self.sam_dir)
 
         self.result_dir = os.path.join(self.cache_path, runname, "results", \
-            "q%d-%s" % (quality, reference))
+            self.reference, ("q%d" % self.quality), self.full_or_deli)
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
+
+
 
     @staticmethod
     def _get_key(fastq1, fastq2, flags):
         return "F_%s_R%s_%s.sam" % (os.path.basename(fastq1), os.path.basename(fastq2), ''.join(flags))
+
+    @staticmethod
+    def _result_name(runname, full_or_deli, reference, quality, minwidth):
+        ref_map = {
+            "gb-ref": "HCV",
+            "gb-ref2": "HCV2",
+            "gb-ref2+hg38": "HCV_Human"
+        }
+
+        ref = ref_map[reference] if reference in ref_map else reference
+        return "%s__%s__%s__q%d__mw%d.csv" % (runname, "full" if full_or_deli else "deli", ref, quality, minwidth)
 
     def check_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)

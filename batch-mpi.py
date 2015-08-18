@@ -60,7 +60,7 @@ def main():
     # Instantiate the cache object
     cache = None
     if args.cache is not None:
-        cache = helper.Cache(args.runname, args.quality, args.x, args.cache)
+        cache = helper.Cache(args.runname, args.minq, args.x, args.cache)
     
     complete = {}
     # new output file

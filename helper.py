@@ -149,7 +149,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
             bowtie2_iter = list(bowtie2_iter)
             cache.cache_sam(fastq1, fastq2, flags, bowtie2_iter)
     else:
-        bowtie2_iter = cache_path.get_sam(fastq1, fastq2, flags)
+        bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
 
 
     for line in bowtie2_iter:
@@ -230,7 +230,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
               min_match_len=100, min_mapq=0, min_score=0,
               n_threads=4, is_show_progress=False, runname="", 
-              sample="", snum="", mapq_outfile=None):
+              sample="", snum="", mapq_outfile=None, cache=None):
     """
     Calls do_map and handles writing to output file
     ASSUMES:
@@ -259,7 +259,7 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     counts, discards, mapqs = do_map(
         fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
         min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
-        is_show_progress=is_show_progress
+        is_show_progress=is_show_progress, cache=cache
     )
     n_discard = sum(discards.values())
     total_count = sum(counts.values()) + n_discard
@@ -319,7 +319,7 @@ class Cache(object):
 
     @staticmethod
     def _get_key(fastq1, fastq2, flags):
-        return "F_%s_R%s_%s.sam" % (fastq1, fastq2, ''.join(flags))
+        return "F_%s_R%s_%s.sam" % (os.path.basename(fastq1), os.path.basename(fastq2), ''.join(flags))
 
     def check_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)
@@ -328,7 +328,7 @@ class Cache(object):
     def cache_sam(self, fastq1, fastq2, flags, content):
         key = Cache._get_key(fastq1, fastq2, flags)
         with open(os.path.join(self.sam_dir, key), "w") as fp:
-            fp.write(content)
+            fp.write(''.join(content))
 
     def get_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)

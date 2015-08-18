@@ -227,7 +227,8 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     # output results
     keys = counts.keys()
     keys.sort()
-    cache_file.close()
+    if cache_file is not None:
+        cache_file.close()
 
     return counts, rejects, mapqs
 

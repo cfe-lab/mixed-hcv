@@ -141,13 +141,14 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     # stream STDOUT from bowtie2
     flags = ['--quiet', '--local']
 
+    cache_file = None
+
     # Check to see if we have a cache, and use it if we do
     if cache is None or not cache.check_sam(fastq1, fastq2, flags):
         bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
 
         if cache is not None:
-            bowtie2_iter = list(bowtie2_iter)
-            cache.cache_sam(fastq1, fastq2, flags, bowtie2_iter)
+            cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
     else:
         bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
 
@@ -156,6 +157,9 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
         if line.startswith('@'):
             # skip header line
             continue
+
+        if cache_file is not None:
+            cache_file.write(line)
 
         items = line.split('\t')
         qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
@@ -223,6 +227,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     # output results
     keys = counts.keys()
     keys.sort()
+    cache_file.close()
 
     return counts, rejects, mapqs
 
@@ -329,6 +334,10 @@ class Cache(object):
         key = Cache._get_key(fastq1, fastq2, flags)
         with open(os.path.join(self.sam_dir, key), "w") as fp:
             fp.write(''.join(content))
+
+    def open_sam_cache(self, fastq1, fastq2, flags, content):
+        key = Cache._get_key(fastq1, fastq2, flags)
+        return open(os.path.join(self.sam_dir, key), "w") 
 
     def get_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)

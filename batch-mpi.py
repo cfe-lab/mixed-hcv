@@ -111,6 +111,7 @@ def main():
 
 
             if cache is not None and cache.check_result(fastq_output_csv):
+                cache.decache_result(fastq_output_csv)
                 continue
 
             with open(fastq_output_csv, 'w') as fh_out_csv, open(logfilename, 'a') as fh_log:

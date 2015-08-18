@@ -356,3 +356,8 @@ class Cache(object):
         result_name = os.path.basename(result_csv)
         shutil.copy(result_path, os.path.join(self.result_dir, result_name))
 
+    def decache_result(self, result_csv):
+        result_path = os.path.abspath(result_csv)
+        result_name = os.path.basename(result_csv)
+        shutil.copy(os.path.join(self.result_dir, result_name), result_path)
+

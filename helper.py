@@ -322,7 +322,7 @@ class Cache(object):
         if not os.path.isdir(self.run_dir):
             os.makedirs(self.run_dir)
 
-        self.sam_dir = os.path.join(self.cache_path, runname, "sam", reference)
+        self.sam_dir = os.path.join(self.cache_path, runname, "sam", self.reference)
         if not os.path.isdir(self.sam_dir):
             os.makedirs(self.sam_dir)
 

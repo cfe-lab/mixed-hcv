@@ -187,7 +187,7 @@ class HCVDeli():
 
         # Check to see if we have a cache, and use it if we do
         if cache is None or not cache.check_sam(fastq1, fastq2, flags):
-            bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
+            bowtie2_iter = bowtie2.align_paired(settings.bowtie2_version, self.refpath, fastq1, fastq2, self.bowtie_threads, flags=flags)
 
             if cache is not None:
                 cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
@@ -372,7 +372,7 @@ class HCVDeli():
 
         # Instantiate a cache object if we can
 
-        aligned = self.align(f1, f2, is_show_progress=is_show_progress, cache)
+        aligned = self.align(f1, f2, is_show_progress=is_show_progress, cache=cache)
         slices = self.slice(aligned)
         # write out to file
         for gene, subsets in slices.iteritems():
@@ -477,9 +477,10 @@ class HCVDeli():
                 f2 = f1.replace('_R1_', '_R2_')
 
                 # Hopefully this will give us more consistency with our run names :S
-                try: 
-                    match = re.search('/([0-9]{6}_M[0-9]{5}_[0-9]{4}_[0-9]{9}-[A-Za-z0-9]{5})', os.path.abspath(f1))
-                    runname = m.group(1)
+                try:
+                    filename = os.path.abspath(f1) 
+                    match = re.search('/([0-9]{6}_M[0-9]{5}_[0-9]{4}_[0-9]{9}-[A-Za-z0-9]{5})', filename)
+                    runname = match.group(1)
                 except:
                     runname = os.path.basename(os.path.dirname(os.path.abspath(f1)))
 
@@ -501,7 +502,7 @@ class HCVDeli():
         
                 # Cache it
                 if self.cache_path is not None:
-                    cache.cache_result(fastq_output_csv)
+                    cache.cache_result(out_filename)
 
 
 def main():

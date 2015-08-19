@@ -187,7 +187,6 @@ class HCVDeli():
 
         # Check to see if we have a cache, and use it if we do
         if cache is None or not cache.check_sam(fastq1, fastq2, flags):
-            print "miss cache"
             bowtie2_iter = bowtie2.align_paired(version=settings.bowtie2_version,
                                             refpath=self.refpath,
                                             fastq1=fastq1,
@@ -198,14 +197,8 @@ class HCVDeli():
             if cache is not None:
                 cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
         else:
-            print "hit cache"
             bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
             close_sam = True
-
-
-        # We don't care about reads where only single mate maps
-        # We don't care about reads where mates map to different reference
-
 
         progress = 0
         read_cache = {}

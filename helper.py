@@ -317,7 +317,10 @@ class Cache(object):
         # Check to see if cache folders exist
         # if not, create them
         if not os.path.isdir(self.cache_path):
-            os.makedirs(self.cache_path)
+            try:
+                os.makedirs(self.cache_path)
+            except OSError, e:
+                pass
 
         self.run_dir = os.path.join(self.cache_path, runname)
         if not os.path.isdir(self.run_dir):
@@ -380,4 +383,10 @@ class Cache(object):
         result_path = os.path.abspath(result_csv)
         result_name = os.path.basename(result_csv)
         shutil.copy(os.path.join(self.result_dir, result_name), result_path)
+
+    def list_cached_results(self):
+        print self.result_dir
+        return [os.path.join(self.result_dir, f) for f in os.listdir(self.result_dir) \
+                    if os.path.isfile(os.path.join(self.result_dir, f))]
+        
 

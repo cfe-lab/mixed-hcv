@@ -346,7 +346,7 @@ class Cache(object):
         ref_map = {
             "gb-ref": "HCV",
             "gb-ref2": "HCV2",
-            "gb-ref2+hg38": "HCV_Human"
+            "gb-ref2+hg38_v2": "HCV_Human"
         }
 
         ref = ref_map[reference] if reference in ref_map else reference

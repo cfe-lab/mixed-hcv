@@ -28,7 +28,7 @@ def main():
     deli = args.runtype
     runname = args.runname
     cache_path = args.cache
-    ref = os.path.basename(args.x)
+    ref = os.path.basename(args.x if args.x is not None else "")
     output = os.path.abspath(args.output)
     input_files = args.inputs
 

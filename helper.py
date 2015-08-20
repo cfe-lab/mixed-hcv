@@ -13,6 +13,7 @@ import bowtie2
 import csv
 import shutil
 from datetime import datetime
+import errno
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
@@ -320,20 +321,33 @@ class Cache(object):
             try:
                 os.makedirs(self.cache_path)
             except OSError, e:
-                pass
+                if e.errno != errno.EEXIST:
+                    raise
 
         self.run_dir = os.path.join(self.cache_path, runname)
         if not os.path.isdir(self.run_dir):
-            os.makedirs(self.run_dir)
+            try:
+                os.makedirs(self.run_dir)
+            except OSError, e:
+                if e.errno != errno.EEXIST:
+                    raise
 
         self.sam_dir = os.path.join(self.cache_path, runname, "sam", self.reference)
         if not os.path.isdir(self.sam_dir):
-            os.makedirs(self.sam_dir)
+            try:
+                os.makedirs(self.sam_dir)
+            except OSError, e:
+                if e.errno != errno.EEXIST:
+                    raise
 
         self.result_dir = os.path.join(self.cache_path, runname, "results", \
             self.reference, ("q%d" % self.quality), ("mw%s" % self.min_width), self.full_or_deli)
         if not os.path.isdir(self.result_dir):
-            os.makedirs(self.result_dir)
+            try:
+                os.makedirs(self.result_dir)
+            except OSError, e:
+                if e.errno != errno.EEXIST:
+                    raise
 
 
 

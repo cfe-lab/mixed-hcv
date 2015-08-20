@@ -3,16 +3,15 @@
 library(knitr)
 args <- commandArgs(TRUE)
 if (length(args) < 2) stop(paste0("Bad args, usage:", 
-                                  "Rscript  'launch_knitr_report.R' [R script to spin] ... [args to pass to R script"))
+                                  "Rscript  'launch_knitr_report.R' [R script to spin] [filepath of output HTML report] [args to pass to R script]"))
 
 knitr_script <- args[1]
+output_html <- args[2]
 
 knit_script_prefix <- unlist(strsplit(knitr_script, "\\.[rR]$", perl=TRUE))[1]
 
 opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error= TRUE, warning = FALSE, message=FALSE, echo=FALSE)
 
-# TODO:  hack - we expect runname to be set in the  child knitr script.  Set it here too.
 spin(knitr_script, knit=FALSE)
 knit2html(paste0(knit_script_prefix, ".Rmd"), stylesheet="markdown_bigwidth.css")
-file.copy(paste0(knit_script_prefix, ".html"), 
-          paste0("/media/macdatafile/mixed-hcv/mixture_reports/", runname, "." , knit_script_prefix, ".html"), overwrite=TRUE)
+file.copy(paste0(knit_script_prefix, ".html"), output_html, overwrite=TRUE)

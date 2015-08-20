@@ -29,9 +29,9 @@ args <- commandArgs(trailingOnly = TRUE)
 print(args)
 
 
-subtype_hits_csv <- args[2]
-expected_mixture_csv <- args[3]
-runname <- args[4]
+subtype_hits_csv <- args[3]
+expected_mixture_csv <- args[4]
+runname <- args[5]
 
 
 

@@ -331,7 +331,7 @@ class Cache(object):
             os.makedirs(self.sam_dir)
 
         self.result_dir = os.path.join(self.cache_path, runname, "results", \
-            self.reference, ("q%d" % self.quality), ("mw%d" % self.min_width), self.full_or_deli)
+            self.reference, ("q%d" % self.quality), ("mw%f" % self.min_width), self.full_or_deli)
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
 

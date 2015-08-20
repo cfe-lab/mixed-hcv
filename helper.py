@@ -350,7 +350,7 @@ class Cache(object):
         }
 
         ref = ref_map[reference] if reference in ref_map else reference
-        return "%s__%s__%s__q%d__mw%d.csv" % (runname, "full" if full_or_deli else "deli", ref, quality, minwidth)
+        return "%s__%s__%s__q%d__mw%f.csv" % (runname, "full" if full_or_deli else "deli", ref, quality, minwidth)
 
     def check_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)

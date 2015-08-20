@@ -331,7 +331,7 @@ class Cache(object):
             os.makedirs(self.sam_dir)
 
         self.result_dir = os.path.join(self.cache_path, runname, "results", \
-            self.reference, ("q%d" % self.quality), ("mw%f" % self.min_width), self.full_or_deli)
+            self.reference, ("q%d" % self.quality), ("mw%s" % self.min_width), self.full_or_deli)
         if not os.path.isdir(self.result_dir):
             os.makedirs(self.result_dir)
 
@@ -350,7 +350,7 @@ class Cache(object):
         }
 
         ref = ref_map[reference] if reference in ref_map else reference
-        return "%s__%s__%s__q%d__mw%f.csv" % (runname, "full" if full_or_deli else "deli", ref, quality, minwidth)
+        return "%s__%s__%s__q%d__mw%s.csv" % (runname, "full" if full_or_deli else "deli", ref, quality, minwidth)
 
     def check_sam(self, fastq1, fastq2, flags):
         key = Cache._get_key(fastq1, fastq2, flags)

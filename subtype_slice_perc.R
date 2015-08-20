@@ -30,9 +30,9 @@ opts_chunk$set(progress = TRUE, verbose = TRUE, width=1500, tidy = FALSE, error=
 
 
 
-subtype_slice_hits_csv <- args[2]
-expected_mixture_csv <- args[3]
-runname <- args[4]
+subtype_slice_hits_csv <- args[3]
+expected_mixture_csv <- args[4]
+runname <- args[5]
 
 
 

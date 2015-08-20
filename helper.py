@@ -143,7 +143,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
 
     cache_file = None
     close_sam = False
-
+    
     # Check to see if we have a cache, and use it if we do
     if cache is None or not cache.check_sam(fastq1, fastq2, flags):
         bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
@@ -346,7 +346,7 @@ class Cache(object):
         ref_map = {
             "gb-ref": "HCV",
             "gb-ref2": "HCV2",
-            "gb-ref2+hg38_v2": "HCV_Human"
+            "gb-ref+hg38_v2": "HCV_Human"
         }
 
         ref = ref_map[reference] if reference in ref_map else reference
@@ -385,7 +385,6 @@ class Cache(object):
         shutil.copy(os.path.join(self.result_dir, result_name), result_path)
 
     def list_cached_results(self):
-        print self.result_dir
         return [os.path.join(self.result_dir, f) for f in os.listdir(self.result_dir) \
                     if os.path.isfile(os.path.join(self.result_dir, f))]
         

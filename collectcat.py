@@ -22,7 +22,11 @@ def main():
     parser.add_argument('inputs', help='inputs', nargs='*', default=[])
 
     args = parser.parse_args()
-    
+
+    if args.runtype not in ("deli", "full"):
+        parser.print_help()
+        sys.exit(1)
+
     min_align_quality = args.minq
     min_target_width = args.min_target_width
     deli = args.runtype

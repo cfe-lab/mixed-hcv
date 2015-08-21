@@ -391,12 +391,19 @@ class Cache(object):
     def cache_result(self, result_csv):
         result_path = os.path.abspath(result_csv)
         result_name = os.path.basename(result_csv)
-        shutil.copy(result_path, os.path.join(self.result_dir, result_name))
+        try:
+            shutil.copy(result_path, os.path.join(self.result_dir, result_name))
+        except OSError, e:
+            shutil.copyfile(result_path, os.path.join(self.result_dir, result_name))
 
     def decache_result(self, result_csv):
         result_path = os.path.abspath(result_csv)
         result_name = os.path.basename(result_csv)
-        shutil.copy(os.path.join(self.result_dir, result_name), result_path)
+        try:
+            shutil.copy(os.path.join(self.result_dir, result_name), result_path)
+        except OSError, e:
+            shutil.copyfile(os.path.join(self.result_dir, result_name), result_path)
+
 
     def list_cached_results(self):
         return [os.path.join(self.result_dir, f) for f in os.listdir(self.result_dir) \

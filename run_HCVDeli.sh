@@ -1,7 +1,7 @@
 #!/bin/bash
 
 runs=$@
-qualities=(0)
+qualities=(7)
 minwidths=(0.25 0.5 1.0)
 ref=gb-ref+hg38_v2
 refnice=HCV_Human
@@ -21,6 +21,8 @@ for run in ${runs[@]}; do
 
 
             Rscript launch_knitr_report.R  subtype_slice_perc.R  /media/macdatafile/mixed-hcv/mixture_reports/${run}__deli__${refnice}__q${quality}__mw${minwidth}.subtype_slice_perc.html  /media/macdatafile/mixed-hcv/staging/$run/${run}__deli__${refnice}__q${quality}__mw${minwidth}.csv  /media/macdatafile/mixed-hcv/expected_mixture/$run.expected_mixture.csv  ${run}__deli__${refnice}__q${quality}__mw${minwidth}
+            
+            rm ./out/$run/${run}__deli__${refnice}__q${quality}__mw${minwidth}.csv*
         done;
     done;
 done;

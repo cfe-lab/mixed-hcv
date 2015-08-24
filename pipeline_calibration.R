@@ -8,7 +8,7 @@
 ## ##
 ## DATA ACQUISITION
 
-already.saved <- FALSE
+already.saved <- TRUE
 save.filename <- "counts_data.RData"
 
 ## Directories that contain the data.  This is tailored to the
@@ -159,7 +159,8 @@ deli.HCV.totals <- with(deli.subtype.counts,
                                     snum=snum,
                                     gene=gene,
                                     ref=ref,
-                                    mapq.cutoff=mapq.cutoff),
+                                    mapq.cutoff=mapq.cutoff,
+                                    coverage=coverage),
                                   sum))
 names(deli.HCV.totals)[which(names(deli.HCV.totals) == "x")] <- "total.HCV"
 
@@ -189,7 +190,7 @@ total.reads.by.sample$proportion.HCV <- with(total.reads.by.sample, total.HCV/to
 ## We parse out the mixture types and proportions from the sample name, eg.
 ## HCVmixed9-RP1A1B-9010-HCV
 ## means 90% 1A and 10% 1B.
-mixture.re <- "HCVmixed.+-RP(?:SD)?([[:digit:]][[:alpha:]]?)([[:digit:]][[:alpha:]]?)-([[:digit:]]{2})([[:digit:]]{1,2})(?:.*)-HCV"
+mixture.re <- "HCVmixed.+-RP(?:SD)?([[:digit:]][[:alpha:]]?)([[:digit:]][[:alpha:]]?)-([[:digit:]]{2})([[:digit:]]{1,2})(?:.*)"
 
 mixtures <- subtype.counts[grepl(mixture.re, subtype.counts$sample),]
 
@@ -351,41 +352,402 @@ for (i in 1:nrow(expected.mixtures))
     expected.mixtures[i, curr.second.geno] <- curr.second.prop/100
   }
 
-## ## For each sample, we make a spider plot of:
-## ## - the expected distribution
-## ## - deli, HCVhuman, mapq.cutoff == 0, coverage == 0.5
-## ## - deli, HCVhuman, mapq.cutoff == 0, coverage == 1
-## ## - full, HCVhuman, mapq.cutoff == 0 and 10
-## ## - full, HCVonly2, mapq.cutoff == 0 and 10
+## For each sample, we make a spider plot of:
+## - the expected distribution
+## - deli, HCVhuman, mapq.cutoff == 0, coverage == 0.5
+## - deli, HCVhuman, mapq.cutoff == 0, coverage == 1
+## - full, HCVhuman, mapq.cutoff == 0 and 10
+## - full, HCVonly, mapq.cutoff == 0 and 10
+## - full, HCVonly2, mapq.cutoff == 0 and 10
 
-## cases.to.plot <-
-##   data.frame(regions.considered=c(rep("deli", 2), rep("full", 4)),
-##              ref=c(rep("HCVhuman", 4), rep("HCVonly2", 2)),
-##              mapq.cutoff=c(0, 0, 0, 10, 0, 10),
-##              coverage=c(0.5, rep(1, 5)))
-## spiderplot.colours <- heat.colors(nrow(cases.to.plot)+1, alpha=0.25)
-                            
-## ## for (i in 1:nrow(expected.mixtures))
-## for (i in 1)
-##   {
-##     curr.sample.name <- sample.names[i]
-##     curr.sample.data <- 
-##       mixed.samples.props[grepl(curr.sample.name, mixed.samples.props$sample),]
+cases.to.plot <-
+  data.frame(regions.considered=c(rep("deli", 2), rep("full", 6)),
+             ref=c(rep("HCVhuman", 2), rep("HCVonly", 2), rep("HCVonly2", 2),
+               rep("HCVhuman", 2)),
+             mapq.cutoff=c(0, 0, 0, 10, 0, 10, 0, 10),
+             coverage=c(0.5, rep(1, 7)))
 
-##     relevant.cases <- merge(cases.to.plot, curr.sample.data)
+radii.scale.factor <- 0.8
 
-##     star.data <- rbind(expected.mixtures[i, 2:ncol(expected.mixtures)],
-##                        relevant.cases[, genotypes])
-##     ## stars(star.data, scale=FALSE, location=c(0,0),
-##     ##       key.loc=c(0,0), main=sample.name, lty=2,
-##     ##       col.lines=spiderplot.colours)
+pdf("mixture_starplots.pdf")
+for (i in 1:nrow(expected.mixtures))
+## for (i in 3)
+  {
+    curr.sample.name <- expected.mixtures$sample[i]
+    curr.sample.data <- 
+      mixed.samples.props[grepl(curr.sample.name, mixed.samples.props$sample),]
+
+    relevant.cases <- merge(cases.to.plot, curr.sample.data, sort=FALSE)
+
+    expected.star.data <- expected.mixtures[i, 2:ncol(expected.mixtures)]
+    star.data <- relevant.cases[, genotypes]
+    combined.star.data <- rbind(expected.star.data, star.data)
+
+    labels <- sapply(1:nrow(relevant.cases),
+                     function (idx)
+                     {
+                       paste(relevant.cases$regions.considered[idx],
+                             ", ",
+                             relevant.cases$ref[idx],
+                             "\nmapq=", relevant.cases$mapq.cutoff[idx],
+                             ", coverage=", relevant.cases$coverage[idx],
+                             sep="")
+                     })
     
-##     stars(star.data[1,], scale=FALSE, location=c(0,0),
-##           key.loc=c(0,0), main=sample.name, lty=2,
-##           col.lines=rgb(0.5, 0.5, 0.5, 0.5))
-##     stars(star.data[1,], scale=FALSE, location=c(0,0),
-##           lwd=2, add=TRUE)
-##     stars(star.data[2:nrow(star.data),],
-##           scale=FALSE, location=c(0,0), lty=1, add=TRUE,
-##           col.lines=heat.colors(nrow(cases.to.plot), alpha=0.25))
-##   }
+    star.locations <- stars(rbind(expected.star.data, star.data),
+                            scale=FALSE, len=radii.scale.factor,
+                            lwd=2, labels=c("expected", labels),
+                            flip.labels=TRUE,
+                            main=curr.sample.name,
+                            radius=FALSE,
+                            cex=0.5)
+    
+    for (i in 1:nrow(star.locations))
+      {
+        stars(combined.star.data[i,], scale=FALSE,
+              len=radii.scale.factor,
+              locations=c(star.locations$Var1[i], star.locations$Var2[i]),
+              key.loc=c(star.locations$Var1[i], star.locations$Var2[i]),
+              lty=2, add=TRUE)
+      }
+  }
+dev.off()
+
+
+## Let's get some assessments for how certain our assessments of
+## the multinomial parameters are.
+library(nnet)
+
+## To solve for p_1, add up p_X/p_1 for all genotypes X to get (1-p1)/p1, then
+## solve for p1:
+## (1-p1)/p1 == X
+## (1-p1) == p1*X
+## p1(X + 1) == 1
+## p1 == 1/(X+1)
+probs <- function(coefs)
+  {
+    odds.ratios <- exp(coefs)
+    not.p1.over.p1 <- sum(odds.ratios)
+    p1 <- 1/(not.p1.over.p1 + 1)
+    return(c(p1, odds.ratios*p1))
+  }
+
+## A function that calculates crude confidence intervals for a
+## multinomial regression's fitted values.
+mult.regr.bounds <- function(multinomial.regression)
+  {
+    std.err <- summary(multinomial.regression)$standard.errors
+    estimates <- fitted(multinomial.regression)
+
+    ## Each element of all.bounds is a list with two elements: the first
+    ## is a two-vector of bounds coming from the intercept.
+    all.bounds <-
+      lapply(1:length(coef(multinomial.regression)),
+             function (idx)
+             {
+               bound.coefs.1 <- coef(multinomial.regression)
+               bound.coefs.2 <- bound.coefs.1
+               bound.coefs.1[idx] <- bound.coefs.1[idx] + 2*std.err[idx]
+               bound.coefs.2[idx] <- bound.coefs.2[idx] - 2*std.err[idx]
+               
+               bound.probs.1 <- probs(bound.coefs.1)
+               bound.probs.2 <- probs(bound.coefs.2)
+               return(list(bounds=range(bound.probs.1[idx+1],
+                             bound.probs.2[idx+1]),
+                           int.bounds=range(bound.probs.1[1],
+                             bound.probs.2[1])))
+             })
+    intercept.bounds <-
+      range(unlist(lapply(all.bounds, function (curr.bound) curr.bound[[2]])))
+    param.bounds <- lapply(all.bounds, function(curr.bound) curr.bound[[1]])
+    
+    return(list(lower=c(intercept.bounds[1],
+                  sapply(param.bounds, function (x) min(x))),
+                upper=c(intercept.bounds[2],
+                  sapply(param.bounds, function (x) max(x)))))
+  }
+
+analyze.trial <- function(curr.trial)
+  {
+    mult.regression <- multinom(as.matrix(curr.trial[, 6:14]) ~ 1)
+    
+    ## Translate the coefficients to probabilities.  The coefficients specify
+    ## the log-odds of being in a specific genotype vs genotype 1 (non-AB).
+    ## For example: log(odds of being in genotype 1A vs 1) == coef1A
+    ## so p_{1A}/p_1 = exp(coef1A)
+    
+    ## We need some criteria for how certain the result would have to be
+    ## before we consider it.
+    std.err <- summary(mult.regression)$standard.errors
+    estimates <- fitted(mult.regression)
+    bounds <- mult.regr.bounds(mult.regression)
+
+    details <-
+      with(curr.trial,
+           paste(regions.considered, ", ", ref, "\nmapq cutoff=",
+                 mapq.cutoff, ", coverage=", coverage, ", N=", total, sep=""))
+    
+    x.coords <- barplot(estimates, ylim=c(0,1), col="lightgrey",
+                        xlab="genotype", ylab="proportion",
+                        main=details, cex.main=0.75)
+
+    arrows(x0=x.coords, y0=bounds$lower,
+           y1=bounds$upper, code=3,
+           angle=90, length=0.05, col="red")
+  }
+
+pdf("mixture_confidences.pdf", width=8.5, height=11)
+for (i in 1:nrow(expected.mixtures))
+  {
+    curr.sample.name <- expected.mixtures$sample[i]
+    curr.sample.data <-
+      mixed.samples[grepl(curr.sample.name, mixed.samples$sample),]
+
+    par(mfrow=c(4,2), oma=c(0,0,3,0))
+    for (idx in 1:nrow(cases.to.plot))
+      {
+        relevant.cases <- merge(cases.to.plot[idx,], curr.sample.data, sort=FALSE)
+        if (nrow(relevant.cases) == 0)
+          {
+            plot.new()
+          } else {
+            analyze.trial(relevant.cases)
+          }
+      }
+    mtext(curr.sample.name, outer=TRUE, cex=1.5)
+  }
+dev.off()
+
+## ##
+## Produce some plots of the estimates of each proportion, broken down
+## by the mixture.
+ingredient.re <- "HCVmixed[^-]+-([^-]+)-.+"
+ingredient.strings <- sub(ingredient.re, "\\1", unique(mixed.samples$sample))
+
+mixed.samples$first.geno <- sub(mixture.re, "\\1", mixed.samples$sample)
+mixed.samples$second.geno <- sub(mixture.re, "\\2", mixed.samples$sample)
+mixed.samples$first.prop <-
+  as.numeric(sub(mixture.re, "\\3", mixed.samples$sample))/100
+mixed.samples$second.prop <-
+  as.numeric(sub(mixture.re, "\\4", mixed.samples$sample))/100
+                  
+## For each trial, perform a multinomial regression.
+regressions <-
+  lapply(1:nrow(mixed.samples),
+         function (idx)
+         {
+           first.geno <- mixed.samples$first.geno[idx]
+           second.geno <- mixed.samples$second.geno[idx]
+
+           first.geno.count <- mixed.samples[idx, first.geno]
+           second.geno.count <- mixed.samples[idx, second.geno]
+           rest.count <- mixed.samples$total[idx] - first.geno.count -
+             second.geno.count
+
+           regr.matrix <-
+             matrix(c(rest.count, first.geno.count, second.geno.count),
+                    dimnames=list(c(""), c("rest", first.geno, second.geno)),
+                    nrow=1)
+           
+           regr <- multinom(regr.matrix ~ 1)
+
+           return(regr)
+         })
+
+## For each set of "ingredients", let's make plots of the estimated
+## proportions of the first genotype, second genotype, and others.
+
+## For each sample, we make a bar plot of:
+## - deli, HCVhuman, mapq.cutoff == 0, coverage == 0.5
+## - deli, HCVhuman, mapq.cutoff == 0, coverage == 1
+## - full, HCVhuman, mapq.cutoff == 0 and 10
+## - full, HCVonly2, mapq.cutoff == 0 and 10
+
+cases.to.barplot <-
+  data.frame(regions.considered=c(rep("deli", 2), rep("full", 4)),
+             ref=c(rep("HCVhuman", 2), rep("HCVonly2", 2),
+               rep("HCVhuman", 2)),
+             mapq.cutoff=c(0, 0, 0, 10, 0, 10),
+             coverage=c(0.5, rep(1, 5)))
+
+pipeline.setting.descs <-
+  sapply(1:nrow(cases.to.barplot),
+         function (idx)
+         {
+           paste(cases.to.barplot$regions.considered[idx],
+                 ", ", cases.to.barplot$ref[idx],
+                 ", mapq >=", cases.to.barplot$mapq.cutoff[idx],
+                 ", coverage=", cases.to.barplot$coverage[idx],
+                 sep="")
+         })
+
+barplot.palette <- rainbow(nrow(cases.to.barplot), s=0.5, v=0.8)
+ten.ninety.two.re <- "[^-]+-RP[^-]+-1090-2(?:-HCV)?"
+
+pdf("mixture_barplots.pdf", width=11, height=8.5)
+for (ingredient.string in unique(ingredient.strings))
+  { 
+    ## Note: in our dataset, this will never return a 0-length vector.
+    relevant.indices <- which(grepl(ingredient.string, mixed.samples$sample))
+    curr.samples <- mixed.samples[relevant.indices,]
+    curr.samples$orig.idx <- relevant.indices
+
+    genotypes <- c(first=curr.samples$first.geno[1],
+                   second=curr.samples$second.geno[1],
+                   rest="rest")
+
+    expected <- list(first=c(0.1, 0.1, 0.5, 0.9))
+    expected$second <- 1 - expected$first
+    if (grepl("RPSD", ingredient.string))
+      {
+        expected$first <- c(0.75, 0.90, 0.95, 0.98)
+        expected$second <- 1 - expected$first
+      }
+    expected$rest <- expected$first
+
+    ## Let's build some bar charts of our data, with one set of bars
+    ## per case we care about.  Thus we will need to build matrices
+    ## whose columns are different expected proportions and whose rows
+    ## represent different pipelines.
+    
+    estimates <- list(rest=NULL, first=NULL, second=NULL)
+    lower <- list(rest=NULL, first=NULL, second=NULL)
+    upper <- list(rest=NULL, first=NULL, second=NULL)
+    for (idx in 1:nrow(cases.to.barplot))
+      {
+        ## This loops over rows of the matrix we're building:
+        ## each loop deals with one pipeline case.
+        
+        curr.data <- merge(cases.to.barplot[idx,], curr.samples)
+        ## We'll also order the 10/90 splits by replicate number.
+        curr.data$replicate <- 1
+        curr.data$replicate[grepl(ten.ninety.two.re, curr.data$sample)] <- 2
+        curr.data <- curr.data[order(curr.data$first.prop,
+                                     curr.data$replicate),]
+
+        curr.estimates <- list(rest=rep(NA, 4), first=rep(NA, 4),
+                               second=rep(NA, 4))
+        curr.lower <- list(rest=rep(NA, 4), first=rep(NA, 4),
+                           second=rep(NA, 4))
+        curr.upper <- list(rest=rep(NA, 4), first=rep(NA, 4),
+                           second=rep(NA, 4))
+        for (curr.settings.idx in 1:nrow(curr.data))
+          {
+            curr.row <- curr.data[curr.settings.idx,]
+            ## Now we fill in each entry in the row.  For
+            ## a non-serial dilution case, the columns should be, from
+            ## left to right, 10%, 10%, 50%, and 90%.
+            curr.first.prop <- curr.row$first.prop
+            
+            if (grepl("RPSD", curr.row$sample))
+              {
+                entry.idx <- match(curr.row$first.prop, c(0.75, 0.9, 0.95, 0.98))
+              } else {
+                entry.idx <- NA
+                if (curr.row$first.prop == 0.1)
+                  {
+                    if (curr.row$replicate == 1)
+                      {
+                        entry.idx <- 1
+                      } else {
+                        entry.idx <- 2
+                      }
+                  } else if (curr.row$first.prop == 0.5) {
+                    entry.idx <- 3
+                  } else {
+                    entry.idx <- 4
+                  }
+              }
+            
+            curr.regr <- regressions[[curr.row$orig.idx]]
+            regr.estimates <- fitted(curr.regr)
+            regr.bounds <- mult.regr.bounds(curr.regr)
+
+            for (j in 1:3)
+              {
+                curr.estimates[[j]][entry.idx] <- regr.estimates[j]
+                curr.lower[[j]][entry.idx] <- regr.bounds$lower[j]
+                curr.upper[[j]][entry.idx] <- regr.bounds$upper[j]
+              }
+          }
+
+        ## Now add the newly constructed row to the matrices we're building.
+        for (param in c("rest", "first", "second"))
+          {
+            estimates[[param]] <- rbind(estimates[[param]],
+                                        curr.estimates[[param]])
+            lower[[param]] <- rbind(lower[[param]], curr.lower[[param]])
+            upper[[param]] <- rbind(upper[[param]], curr.upper[[param]])
+          }
+      }
+
+    par(mfrow=c(2,2), oma=c(0,0,3,0))
+    for (param in c("first", "second", "rest"))
+      {
+
+        
+        curr.positions <-
+          barplot(estimates[[param]], ylim=c(0,1),
+                  beside=TRUE, names.arg=expected[[param]],
+                  col=barplot.palette,
+                  main=genotypes[param])
+
+        ## Add some error bars.
+        for (i in 1:nrow(curr.positions))
+          {
+            arrows(x0=curr.positions[i,],
+                   y0=lower[[param]][i,],
+                   y1=upper[[param]][i,],
+                   code=3, angle=90, length=0.05, col="black")
+          }
+
+        if (param %in% c("first", "second"))
+          {
+            ## Add horizontal dashed lines for the expected amounts.
+            for (i in 1:ncol(curr.positions))
+              {
+                arrows(x0=curr.positions[1, i],
+                       x1=curr.positions[nrow(cases.to.barplot), i],
+                       y0=expected[[param]][i],
+                       lty="dashed", length=0)
+              }
+          }
+
+      }
+    plot.new()
+    legend("center", legend=pipeline.setting.descs,
+           fill=barplot.palette, xpd=TRUE)
+    mtext(ingredient.string, outer=TRUE, cex=1.5)
+  }
+dev.off()
+
+
+## ##
+## Confidence plots based on multinomial regression, as Richard H
+## requested.
+
+confidence.plot.RH.cases <- data.frame(regions.considered="full",
+  ref="HCVhuman", mapq.cutoff=10, coverage=1)
+
+pdf("mixture_confidences_RH.pdf", width=11, height=8.5)
+for (i in 1:nrow(expected.mixtures))
+  {
+    curr.sample.name <- expected.mixtures$sample[i]
+    curr.sample.data <-
+      mixed.samples[grepl(curr.sample.name, mixed.samples$sample),]
+
+    par(oma=c(0,0,3,0))
+    for (idx in 1:nrow(confidence.plot.RH.cases))
+      {
+        relevant.cases <- merge(confidence.plot.RH.cases[idx,],
+                                curr.sample.data, sort=FALSE)
+        if (nrow(relevant.cases) == 0)
+          {
+            plot.new()
+          } else {
+            analyze.trial(relevant.cases)
+          }
+      }
+    mtext(curr.sample.name, outer=TRUE, cex=1.5)
+  }
+dev.off()

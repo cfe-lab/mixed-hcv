@@ -1,7 +1,7 @@
 #!/bin/bash
 
 runs=$@
-qualities=(0 7 10)
+qualities=(0 7 10 20)
 minwidths=(0.125)
 ref=gb-ref+hg38_v2
 refnice=HCV_Human

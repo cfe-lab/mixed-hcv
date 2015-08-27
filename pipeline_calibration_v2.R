@@ -1,7 +1,6 @@
 #!/usr/bin/Rscript --vanilla
 
 ## Compare the results of the mixed-hcv pipeline under different settings.
-## This version makes the files Richard H requested as of August 26, 2015.
 
 ## ##
 ## DATA ACQUISITION
@@ -142,13 +141,6 @@ subtype.counts <-
                     "gene", "subtype", "count", "total.HCV")]
 
 write.csv(subtype.counts, file="HCV_subtype_data.csv", row.names=FALSE)
-
-## Richard H requests a version of this that says "key regions only"
-## for "deli", which is reasonable.
-no.deli <- subtype.counts
-no.deli$regions.considered[no.deli$regions.considered == "deli"] <-
-  "key regions only"
-write.csv(no.deli, file="HCV_subtype_data_RH.csv", row.names=FALSE)
 
 ## END CREATING CSV OUTPUT
 ## ##
@@ -327,28 +319,25 @@ for (i in 1:nrow(expected.mixtures))
 ## ##
 ## SPIDER PLOT
 
-## Plots Richard requested:
-## - deli, HCV_Human, mapq=10, coverage=0.25
-## - same but for full pipeline
+## For each sample, we make a spider plot of:
+## - the expected distribution
+## - deli, ref="HCV_Human", mapq.cutoff=0, coverage=0.125
+## - same, coverage=0.5
+## - deli, ref="HCV_Human", mapq.cutoff=7, coverage=0.125
+## - same, coverage 0.25
+## - same, coverage=0.5
+## - same, coverage=1.0
+## - deli, ref="HCV_Human", mapq.cutoff=10, coverage=0.125
 
 cases.to.starplot <- 
-  data.frame(regions.considered=c("deli", "full"),
-             ref=rep("HCV_Human", 2),
-             mapq.cutoff=rep(10, 2),
-             coverage=c(0.25, 0))
+  data.frame(regions.considered=rep("deli", 4),
+             ref=rep("HCV_Human", 4),
+             mapq.cutoff=rep(7, 4),
+             coverage=c(0.125, 0.25, 0.5, 1))
 
 radii.scale.factor <- 0.8
 
-RH.region.name <- function(x)
-  {
-    if (x == "deli")
-      {
-        return("key regions only")
-      }
-    return(x)
-  }
-
-pdf("mixture_starplots_full_vs_key_RH.pdf")
+pdf("mixture_starplots_deli_coverages.pdf")
 for (i in 1:nrow(expected.mixtures))
   {
     curr.sample.name <- expected.mixtures$sample[i]
@@ -364,7 +353,7 @@ for (i in 1:nrow(expected.mixtures))
     labels <- sapply(1:nrow(relevant.cases),
                      function (idx)
                      {
-                       paste(RH.region.name(relevant.cases$regions.considered[idx]),
+                       paste(relevant.cases$regions.considered[idx],
                              ", ",
                              relevant.cases$ref[idx],
                              "\nmapq=", relevant.cases$mapq.cutoff[idx],
@@ -379,9 +368,7 @@ for (i in 1:nrow(expected.mixtures))
                             flip.labels=TRUE,
                             main=curr.sample.name,
                             radius=FALSE,
-                            cex=0.5,
-                            mar=c(3,3,3,3),
-                            xpd=TRUE)
+                            cex=0.5)
     
     for (i in 1:nrow(star.locations))
       {
@@ -470,9 +457,8 @@ analyze.trial <- function(curr.trial)
 
     details <-
       with(curr.trial,
-           paste(RH.region.name(regions.considered), ", ", ref,
-                 "\nmapq cutoff=", mapq.cutoff, ", coverage=", coverage,
-                 ", N=", total, sep=""))
+           paste(regions.considered, ", ", ref, "\nmapq cutoff=",
+                 mapq.cutoff, ", coverage=", coverage, ", N=", total, sep=""))
     
     x.coords <- barplot(estimates, ylim=c(0,1), col="lightgrey",
                         xlab="genotype", ylab="proportion",
@@ -483,17 +469,20 @@ analyze.trial <- function(curr.trial)
            angle=90, length=0.05, col="red")
   }
 
-## The cases that Richard requested (same as the starplot).
-cases.to.confidence.plot <- cases.to.starplot
+cases.to.confidence.plot <- 
+  data.frame(regions.considered=rep("deli", 4),
+             ref=rep("HCV_Human", 4),
+             mapq.cutoff=c(7, 7, 7, 7),
+             coverage=c(0.125, 0.25, 0.5, 1))
 
-pdf("mixture_confidences_full_vs_key_RH.pdf", width=8.5, height=11)
+pdf("mixture_confidences_deli_coverages.pdf", width=8.5, height=11)
 for (i in 1:nrow(expected.mixtures))
   {
     curr.sample.name <- expected.mixtures$sample[i]
     curr.sample.data <-
       mixed.samples[grepl(curr.sample.name, mixed.samples$sample),]
 
-    par(mfrow=c(2,1), oma=c(0,0,3,0))
+    par(mfrow=c(2,2), oma=c(0,0,3,0))
     for (idx in 1:nrow(cases.to.confidence.plot))
       {
         relevant.cases <- merge(cases.to.confidence.plot[idx,],
@@ -553,14 +542,22 @@ regressions <-
 ## For each set of "ingredients", let's make plots of the estimated
 ## proportions of the first genotype, second genotype, and others.
 
-## The plots that Richard would like included (same as for the others).
-cases.to.barplot <- cases.to.starplot
+## For each sample, we make a bar plot of:
+## - deli, HCV_Human, mapq.cutoff == 7, coverage == 0.125
+## - same, coverage == 0.25
+## - same, coverage == 0.5
+## - same, coverage == 1
+cases.to.barplot <-
+  data.frame(regions.considered=rep("deli", 4),
+             ref=rep("HCV_Human", 4),
+             mapq.cutoff=rep(7, 4),
+             coverage=c(0.125, 0.25, 0.5, 1))
 
 pipeline.setting.descs <-
   sapply(1:nrow(cases.to.barplot),
          function (idx)
          {
-           paste(RH.region.name(cases.to.barplot$regions.considered[idx]),
+           paste(cases.to.barplot$regions.considered[idx],
                  ", ", cases.to.barplot$ref[idx],
                  ", mapq >=", cases.to.barplot$mapq.cutoff[idx],
                  ", coverage=", cases.to.barplot$coverage[idx],
@@ -570,7 +567,7 @@ pipeline.setting.descs <-
 barplot.palette <- rainbow(nrow(cases.to.barplot), s=0.5, v=0.8)
 ten.ninety.two.re <- "[^-]+-RP[^-]+-1090-2(?:-HCV)?"
 
-pdf("mixture_barplots_full_vs_key_RH.pdf", width=11, height=8.5)
+pdf("mixture_barplots_deli_coverages.pdf", width=11, height=8.5)
 for (ingredient.string in unique(ingredient.strings))
   { 
     ## Note: in our dataset, this will never return a 0-length vector.
@@ -578,9 +575,9 @@ for (ingredient.string in unique(ingredient.strings))
     curr.samples <- mixed.samples[relevant.indices,]
     curr.samples$orig.idx <- relevant.indices
 
-    main.genotypes <- c(first=curr.samples$first.geno[1],
-                        second=curr.samples$second.geno[1],
-                        rest="rest")
+    genotypes <- c(first=curr.samples$first.geno[1],
+                   second=curr.samples$second.geno[1],
+                   rest="rest")
 
     expected <- list(first=c(0.1, 0.1, 0.5, 0.9))
     expected$second <- 1 - expected$first
@@ -679,7 +676,7 @@ for (ingredient.string in unique(ingredient.strings))
           barplot(estimates[[param]], ylim=c(0,1),
                   beside=TRUE, names.arg=expected[[param]],
                   col=barplot.palette,
-                  main=main.genotypes[param])
+                  main=genotypes[param])
 
         ## Add the Ns.
         for (i in 1:nrow(curr.positions))
@@ -722,9 +719,39 @@ dev.off()
 ## END BAR PLOTS
 ## ##
 
+## ## ##
+## ## Confidence plots based on multinomial regression, as Richard H
+## ## requested.
+
+## confidence.plot.RH.cases <- data.frame(regions.considered="full",
+##   ref="HCVhuman", mapq.cutoff=10, coverage=1)
+
+## pdf("mixture_confidences_RH.pdf", width=11, height=8.5)
+## for (i in 1:nrow(expected.mixtures))
+##   {
+##     curr.sample.name <- expected.mixtures$sample[i]
+##     curr.sample.data <-
+##       mixed.samples[grepl(curr.sample.name, mixed.samples$sample),]
+
+##     par(oma=c(0,0,3,0))
+##     for (idx in 1:nrow(confidence.plot.RH.cases))
+##       {
+##         relevant.cases <- merge(confidence.plot.RH.cases[idx,],
+##                                 curr.sample.data, sort=FALSE)
+##         if (nrow(relevant.cases) == 0)
+##           {
+##             plot.new()
+##           } else {
+##             analyze.trial(relevant.cases)
+##           }
+##       }
+##     mtext(curr.sample.name, outer=TRUE, cex=1.5)
+##   }
+## dev.off()
+
+
 ## How much is changing mapq.cutoff even changing the results at all?
-all.ranges <- NULL
-all.differences <- NULL
+total.ranges <- NULL
 for (sample in unique(mixed.samples$sample))
   {
     for (coverage in unique(mixed.samples$coverage))
@@ -737,20 +764,11 @@ for (sample in unique(mixed.samples$sample))
 
         if (nrow(curr.data) > 1)
           {
-            curr.ranges <- data.frame(sample=sample, coverage=coverage)
-            curr.differences <- data.frame(sample=sample, coverage=coverage)
-            for (genotype in genotypes)
-              {
-                curr.ranges[, paste(genotype, ".low", sep="")] <-
-                  min(curr.data[, genotype])
-                curr.ranges[, paste(genotype, ".high", sep="")] <-
-                  max(curr.data[, genotype])
-                curr.differences[, genotype] <-
-                  max(curr.data[, genotype]) - min(curr.data[, genotype])
-              }
-            
-            all.ranges <- rbind(all.ranges, curr.ranges)
-            all.differences <- rbind(all.differences, curr.differences)
+            total.ranges <- rbind(total.ranges,
+                                  data.frame(sample=sample,
+                                             coverage=coverage,
+                                             low=min(curr.data$total),
+                                             high=max(curr.data$total)))
           }                                  
       }
   }

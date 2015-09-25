@@ -29,11 +29,14 @@ def main():
     parser.add_argument('-output', help='<output CSV> file to write results')
     parser.add_argument('-runname', help='<input> name of the run')
     parser.add_argument('-log', help='path to logfile', default='mixed-hcv.batch.log')
+
+    # bowtie2 settings
     parser.add_argument('-x', help='path to bowtie2 index (.bt2)', default='data/gb-ref2')
     parser.add_argument('-p', type=int, help='number of bowtie2 threads', default=6)
     parser.add_argument('-minlen', type=int, help='minimum match length (CIGAR M)', default=100)
     parser.add_argument('-minq', type=int, help='minimum mapping quality (MAPQ)', default=0)
     parser.add_argument('-mins', type=int, help='minimum alignment score', default=0)
+
     parser.add_argument("--mapqfile", help="<output CSV> file containing mapping quality scores (optional)")
     parser.add_argument("--cache", help="the cache folder that holds all results and sam files", default=None)
 

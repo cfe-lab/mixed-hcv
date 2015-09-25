@@ -38,7 +38,6 @@ The primary output of CSV reports the number of reads mapped to each HCV genotyp
 
 ## Alternate pipelines
 
-
 **Full-Genome Hit Pipeline:**
 
 Aligns reads against reference fasta and counts hits.  Outputs sam file including unaligned reads, secondary alignments, and chimeric alignments.  Any first-mate that aligns to HCV\* or hg38\* reference sequence counts as a hit.  Ignores low mapping quality, low alignment score (AS field) alignments.
@@ -69,5 +68,6 @@ Execute run_HCVDeli.sh to run entire pipeline.
 - `gb-ref`: Only HCV sequences from genbank.  Some of the sequences don't have accessions.  Also stored in `/macdatafile/mixed-hcv/ref/gb-ref.fa`.
 
 - `gb-ref2`:  Only HCV sequences from genbank.  All sequences will have accessions.  Also stored in `/macdatafile/mixed-hcv/ref/gb-ref2.fa`.
+
 
   

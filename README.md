@@ -59,7 +59,7 @@ Execute run_HCVDeli.sh to run entire pipeline.
   
 * `collectcat.py`:  Collates all per-sample hit target-region sequence count CSV files into per-run sequence count CSV.
 
-** Random primer project pipeline **
+**Random primer project pipeline:**
 
 1. `batch-mpi.py`: Map short reads in FASTQ files to `gb-ref+hg38_v2` reference set; run with `--cache` option to save SAM outputs to files
 2. `sam2aln.py`: Converts cached SAM file to a CSV of nucleotide variants aligned to HCV reference genomes

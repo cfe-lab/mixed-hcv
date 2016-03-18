@@ -58,7 +58,16 @@ Execute run_HCVDeli.sh to run entire pipeline.
 * `HCVDeli.py`:  Aligns reads, merges mates, counts hits.  Caches sam, per-sample target-region sequence count CSV to hard-drive.  Will not overwrite existing cached files. You may execute this script with or without MPI.
   
 * `collectcat.py`:  Collates all per-sample hit target-region sequence count CSV files into per-run sequence count CSV.
-  
+
+** Random primer project pipeline **
+
+1. `batch-mpi.py`: Map short reads in FASTQ files to `gb-ref+hg38_v2` reference set; run with `--cache` option to save SAM outputs to files
+2. `sam2aln.py`: Converts cached SAM file to a CSV of nucleotide variants aligned to HCV reference genomes
+3. `aln2aafreq.py`: Converts aligned nucleotide variants to amino acid counts within specified targets (NS3, NS5a, and NS5b)
+4. `merge_by_ref_gene.py`: Collates amino acid counts from multiple reference coordinate systems to a single H77 coordinate system.
+5. `coverage_map.R`: Generates PDF plot summarizing coverage of H77 NS3, NS5a and NS5b (amino acid coordinates)
+6. `aln2coverage.py`: Converts aligned nucleotide variants to H77 genome-wide coverage data
+7. `aln2coverage.R`: Generates PDF plot summarizing coverage of H77 nucleotide coordinates (genome-wide)
 
 
 ## Reference Fastas:

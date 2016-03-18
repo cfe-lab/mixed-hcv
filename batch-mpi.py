@@ -17,7 +17,7 @@ my_rank = MPI.COMM_WORLD.Get_rank()
 nprocs = MPI.COMM_WORLD.Get_size()
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
-BOWTIE2_VERSION = "2.2.1"
+BOWTIE2_VERSION = "2.2.3"
 
 
 def main():

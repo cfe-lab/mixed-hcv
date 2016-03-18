@@ -109,7 +109,7 @@ def count_zipped_file_lines(path):
     http://stackoverflow.com/questions/4846891/python-piping-output-between-two-subprocesses
     http://superuser.com/questions/135329/count-lines-in-a-compressed-file
     """
-    unzipped_pipe = subprocess.Popen(['zcat', path], stdout=subprocess.PIPE)
+    unzipped_pipe = subprocess.Popen(['gunzip', '-c', path], stdout=subprocess.PIPE)
     wc_process = subprocess.Popen(['wc', '-l'], stdin=unzipped_pipe.stdout, stdout=subprocess.PIPE)
     unzipped_pipe.stdout.close() # enable write error in zcat if wc dies
     wc_out, wc_err = wc_process.communicate()

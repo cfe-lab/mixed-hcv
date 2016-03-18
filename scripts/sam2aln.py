@@ -29,6 +29,7 @@ import sys
 max_prop_N = 0.2
 read_mapping_cutoff = 0
 sam2aln_q_cutoffs = [15]
+nthreads = 4
 
 def parseArgs():
     parser = argparse.ArgumentParser(
@@ -45,7 +46,7 @@ def parseArgs():
     parser.add_argument('failed_csv',
                         type=argparse.FileType('w'),
                         help='<output> CSV containing reads that failed to merge')
-    parser.add_argument('-p', type=int, default=None, help='(optional) number of threads')
+    #parser.add_argument('-p', type=int, default=None, help='(optional) number of threads')
     
     return parser.parse_args()
 
@@ -390,7 +391,7 @@ def main():
             aligned_csv=args.aligned_csv,
             insert_csv=args.insert_csv,
             failed_csv=args.failed_csv,
-            nthreads=args.p)
+            nthreads=nthreads)
 
 if __name__ == '__main__':
     main()

@@ -118,7 +118,7 @@ def count_zipped_file_lines(path):
 
 
 def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min_score, bowtie2_version,
-           is_show_progress=False, cache=None):
+           cache=None):
     """
     Process SAM output as it is streamed from bowtie2 to assign
     short reads to HCV genotypes/subtypes.
@@ -127,9 +127,6 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     # get size of FASTQ
     progress = 0
     nrecords = 0
-    if is_show_progress:
-        nrecords = count_zipped_file_lines(fastq1) / 2
-
 
     # collect SAM output by refname
     counts = {}
@@ -140,108 +137,66 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     mapqs = {}
 
     # stream STDOUT from bowtie2
-    flags = ['--quiet', '--local']
-
-    cache_file = None
-    close_sam = False
+    flags = ['--quiet', '--local', '--no-head']
     
-    # Check to see if we have a cache, and use it if we do
-    if cache is None or not cache.check_sam(fastq1, fastq2, flags):
-        bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
+    bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
 
-        if cache is not None:
-            cache_file = cache.open_sam_cache(fastq1, fastq2, flags, bowtie2_iter)
-    else:
-        bowtie2_iter = cache.get_sam(fastq1, fastq2, flags)
-        close_sam = True
-
-
-    for line in bowtie2_iter:
-        if line.startswith('@'):
-            # skip header line
-            continue
-
-        if cache_file is not None:
-            cache_file.write(line)
-
+    for line, line2 in bowtie2_iter:
         items = line.split('\t')
-        qname, flag, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
-        if is_show_progress:
-            progress += 1
-            if progress % 10000 == 0:
-                print('[%s] (%d/%d) mapped %d (%d/%d/%d/%d)' % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    progress, nrecords, 2*total_count, rejects["mapq"], rejects["hybrid"], rejects["short"], rejects["low score"]))
+        qname, flag1, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
+        qname2, flag2, rname2, pos2, mapq2, cigar2, _, _, _, seq2, qual2 = line2.split('\t')[:11]
+        assert qname == qname2, 'qnames do not match'
+        # TODO: make this loop over bowtie2 output two lines at a time
 
-        
-        # ignore second reads
-        if not is_first_read(flag):
-            continue
-            
-        if rname == '*':
+        if not rname.startswith('HCV') or not rname2.startswith('HCV'):
             rejects['unknown'] += 1
             continue
-        
-        if rname.startswith('HCV'):
-            subtype = rname.split('-')[1]  # 'HCV-1a' -> '1a'
-            genotype = subtype[0]
-        elif rname.startswith('hg38'):
-            # mapped to human chromosome
-            subtype = rname
-            genotype = ''
-        else:
-            rejects['unknown'] += 1
-            continue
-
-        # discard reads with low map quality
-        q = int(mapq)
-        if q < min_mapq:
-            rejects['mapq'] += 1
-            continue
-
-        # Collect the mapping quality info.
-        mapqs[(qname, flag)] = mapq
 
         # ignore reads whose mate mapped to a different genotype
-        mate_genotype = rnext.split('-')[1][0] if '-' in rnext else ''
-        if rnext != '=' and genotype != mate_genotype:
+        geno1 = rname.split('-')[1][0] if '-' in rname else ''
+        geno2 = rname2.split('-')[1][0] if '-' in rname2 else ''
+        if geno1 != geno2 or cigar == '*' or cigar2 == '*':
             rejects['hybrid'] += 1
             continue
 
         # filter out reads based on match length - e.g., primers
-        tokens = cigar_re.findall(cigar)
-        match_len = sum([int(token.strip('M')) for token in tokens if token.endswith('M')])
-        if match_len < min_match_len:
-            rejects['short'] += 1
-            continue
+        for cig in [cigar, cigar2]:
+            tokens = cigar_re.findall(cig)
+            match_len = sum([int(token.strip('M')) for token in tokens if token.endswith('M')])
+            if match_len < min_match_len:
+                rejects['short'] += 1
+                continue
+
+        if cache:
+            # write SAM output to file, but only if the read mapped to HCV
+            cache.write(line)
+            cache.write(line2)
 
         # filter out reads with low alignment score
-        optionals = dict([item.split(':i:') for item in items[11:] if ':i:' in item])
-        if 'AS' not in optionals or int(optionals['AS']) < min_score:
-            rejects['low score'] += 1
-            continue
+        #optionals = dict([item.split(':i:') for item in items[11:] if ':i:' in item])
+        #if 'AS' not in optionals or int(optionals['AS']) < min_score:
+        #    rejects['low score'] += 1
+        #    continue
 
         # update counts
-        if subtype not in counts:
-            counts.update({subtype: 0})
-        counts[subtype] += 1
+        if geno1 not in counts:
+            counts.update({geno1: 0})
+        counts[geno1] += 1
         total_count += 1
 
 
     # output results
     keys = counts.keys()
     keys.sort()
-    if cache_file is not None:
-        cache_file.close()
-    if close_sam:
-        bowtie2_iter.close()
+
+    bowtie2_iter.close()
 
     return counts, rejects, mapqs
 
 
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
-              min_match_len=100, min_mapq=0, min_score=0,
-              n_threads=4, is_show_progress=False, runname="", 
-              sample="", snum="", mapq_outfile=None, cache=None):
+              min_match_len=100, min_mapq=0, min_score=0, n_threads=4, 
+              mapq_outfile=None, cache=None):
     """
     Calls do_map and handles writing to output file
     ASSUMES:
@@ -265,12 +220,11 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
 
     # new output file
     #runname,sample,snum,subtype,count,total,perc
-    outpath.write('runname,sample,snum,subtype,count,total,perc\n')
+    outpath.write('subtype,count,total,perc\n')
 
     counts, discards, mapqs = do_map(
         fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
-        min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score,
-        is_show_progress=is_show_progress, cache=cache
+        min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score, cache=cache
     )
     n_discard = sum(discards.values())
     total_count = sum(counts.values()) + n_discard
@@ -279,11 +233,11 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
 
     for subtype, count in counts.iteritems():
         perc = 0 if not total_count else count*100/float(total_count)
-        outpath.write('%s,%s,%s,%s,%d,%d,%.4g\n' % (runname, sample, snum, subtype, count, total_count, perc))
+        outpath.write('%s,%d,%d,%.4g\n' % (subtype, count, total_count, perc))
 
     # record number of reads that failed to map
     disc_perc = 0 if not total_count else n_discard*100/float(total_count)
-    outpath.write('%s,%s,%s,,%d,%d,%.4g\n' % (runname, sample, snum, n_discard, total_count, disc_perc))
+    outpath.write(',%d,%d,%.4g\n' % (n_discard, total_count, disc_perc))
 
     # If mapq_outfile is specified, write the mapping quality information out to it.
     if mapq_outfile:
@@ -291,122 +245,4 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
         mapq_csv_writer.writerow(("qname", "flag", "mapq"))
         for qname, flag in mapqs:
             mapq_csv_writer.writerow((qname, flag, mapqs[(qname, flag)]))
-
-
-class Cache(object):
-    def __init__(self, runname, quality, reference, full_or_deli, min_width, path):
-        """
-        Initializes the cache of aligned files and result CSVs
-
-        :param runname: The name of the run (YYMMDD_M????_0???_000000-XXXXX)
-        :param quality: The cutoff aligment quality for this 
-        :param reference: Path to reference
-        :param path: Path to cache folder
-        """
-
-        # Setup local vars
-        self.runname = runname
-        self.quality = quality
-        self.reference = os.path.basename(reference)
-        self.cache_path = os.path.abspath(path)
-        self.full_or_deli = full_or_deli
-        self.min_width = min_width
-
-        if full_or_deli not in ["full", "deli"]:
-            raise "Unknown run type!"
-
-        # Check to see if cache folders exist
-        # if not, create them
-        if not os.path.isdir(self.cache_path):
-            try:
-                os.makedirs(self.cache_path)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-        self.run_dir = os.path.join(self.cache_path, runname)
-        if not os.path.isdir(self.run_dir):
-            try:
-                os.makedirs(self.run_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-        self.sam_dir = os.path.join(self.cache_path, runname, "sam", self.reference)
-        if not os.path.isdir(self.sam_dir):
-            try:
-                os.makedirs(self.sam_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-        self.result_dir = os.path.join(self.cache_path, runname, "results", \
-            self.reference, ("q%d" % self.quality), ("mw%s" % self.min_width), self.full_or_deli)
-        if not os.path.isdir(self.result_dir):
-            try:
-                os.makedirs(self.result_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-
-
-    @staticmethod
-    def _get_key(fastq1, fastq2, flags):
-        return "F_%s_R%s_%s.sam" % (os.path.basename(fastq1), os.path.basename(fastq2), ''.join(flags))
-
-    @staticmethod
-    def _result_name(runname, full_or_deli, reference, quality, minwidth):
-        ref_map = {
-            "gb-ref": "HCV",
-            "gb-ref2": "HCV2",
-            "gb-ref+hg38_v2": "HCV_Human"
-        }
-
-        ref = ref_map[reference] if reference in ref_map else reference
-        return "%s__%s__%s__q%d__mw%s.csv" % (runname, full_or_deli, ref, quality, minwidth)
-
-    def check_sam(self, fastq1, fastq2, flags):
-        key = Cache._get_key(fastq1, fastq2, flags)
-        return os.path.exists(os.path.join(self.sam_dir, key))
-
-    def cache_sam(self, fastq1, fastq2, flags, content):
-        key = Cache._get_key(fastq1, fastq2, flags)
-        with open(os.path.join(self.sam_dir, key), "w") as fp:
-            fp.write(''.join(content))
-
-    def open_sam_cache(self, fastq1, fastq2, flags, content):
-        key = Cache._get_key(fastq1, fastq2, flags)
-        return open(os.path.join(self.sam_dir, key), "w") 
-
-    def get_sam(self, fastq1, fastq2, flags):
-        key = Cache._get_key(fastq1, fastq2, flags)
-        lines = []
-        return open(os.path.join(self.sam_dir, key), "r")
-
-    def check_result(self, result_csv):
-        result_name = os.path.basename(result_csv)
-        return os.path.exists(os.path.join(self.result_dir, result_name))
-
-    def cache_result(self, result_csv):
-        result_path = os.path.abspath(result_csv)
-        result_name = os.path.basename(result_csv)
-        try:
-            shutil.copy(result_path, os.path.join(self.result_dir, result_name))
-        except OSError, e:
-            shutil.copyfile(result_path, os.path.join(self.result_dir, result_name))
-
-    def decache_result(self, result_csv):
-        result_path = os.path.abspath(result_csv)
-        result_name = os.path.basename(result_csv)
-        try:
-            shutil.copy(os.path.join(self.result_dir, result_name), result_path)
-        except OSError, e:
-            shutil.copyfile(os.path.join(self.result_dir, result_name), result_path)
-
-
-    def list_cached_results(self):
-        return [os.path.join(self.result_dir, f) for f in os.listdir(self.result_dir) \
-                    if os.path.isfile(os.path.join(self.result_dir, f))]
-        
 

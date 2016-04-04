@@ -2,6 +2,7 @@
 Wrapper script for bowtie2-align and bowtie2-build with version control
 """
 import subprocess
+from itertools import izip_longest
 
 def build(version, fasta):
     """
@@ -43,11 +44,11 @@ def align_paired(version, refpath, fastq1, fastq2, nthreads, flags=('--quiet', '
     local_version = stdout.split('\n')[0].split()[-1]
     assert version == local_version, 'bowtie2 version incompatibility %s != %s' % (version, local_version)
 
-    # stream output from bowtie2
+    # stream output from bowtie2, two at a time
     bowtie_args = ['bowtie2', '-x', refpath, '-1', fastq1, '-2', fastq2, '-p', str(nthreads)] + list(flags)
     p2 = subprocess.Popen(bowtie_args, stdout=subprocess.PIPE)
-    for line in p2.stdout:
-        yield line
+    for line, line2 in izip_longest(p2.stdout, p2.stdout, fillvalue=''):
+        yield line, line2
 
     # exception handling
     if p2.returncode:

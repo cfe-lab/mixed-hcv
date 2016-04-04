@@ -276,6 +276,8 @@ def parse_sam(rows):
 
     if reason:
         failed_list.append({'qname': qname,
+                            'rname1': row1['rname'],
+                            'rname2': row2['rname'],
                             'reason': reason})
     else:
         pos1 = int(row1['pos'])-1  # convert 1-index to 0-index
@@ -341,7 +343,7 @@ def sam2aln(remap_csv, aligned_csv, insert_csv, failed_csv, nthreads=None):
     insert_writer = DictWriter(insert_csv, insert_fields, lineterminator=os.linesep)
     insert_writer.writeheader()
 
-    failed_fields =  ['qname', 'reason']
+    failed_fields =  ['qname', 'rname1', 'rname2', 'reason']
     failed_writer = DictWriter(failed_csv, failed_fields, lineterminator=os.linesep)
     failed_writer.writeheader()
 

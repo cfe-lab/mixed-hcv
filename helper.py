@@ -131,10 +131,6 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     # collect SAM output by refname
     counts = {}
     rejects = {'unknown': 0, 'mapq': 0, 'hybrid': 0, 'low score': 0, 'short': 0}
-    total_count = 0
-
-    # This is for collecting read qualities.
-    mapqs = {}
 
     # stream STDOUT from bowtie2
     flags = ['--quiet', '--local', '--no-head']
@@ -142,20 +138,23 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     bowtie2_iter = bowtie2.align_paired(bowtie2_version, refpath, fastq1, fastq2, bowtie_threads, flags=flags)
 
     for line, line2 in bowtie2_iter:
-        items = line.split('\t')
-        qname, flag1, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = items[:11]
+        qname, flag1, rname, pos, mapq, cigar, rnext, pnext, tlen, seq, qual = line.split('\t')[:11]
         qname2, flag2, rname2, pos2, mapq2, cigar2, _, _, _, seq2, qual2 = line2.split('\t')[:11]
         assert qname == qname2, 'qnames do not match'
-        # TODO: make this loop over bowtie2 output two lines at a time
 
+        # ignore pairs if one read fails to map to HCV
         if not rname.startswith('HCV') or not rname2.startswith('HCV'):
+            rejects['unknown'] += 1
+            continue
+
+        if cigar == '*' or cigar2 == '*':
             rejects['unknown'] += 1
             continue
 
         # ignore reads whose mate mapped to a different genotype
         geno1 = rname.split('-')[1][0] if '-' in rname else ''
         geno2 = rname2.split('-')[1][0] if '-' in rname2 else ''
-        if geno1 != geno2 or cigar == '*' or cigar2 == '*':
+        if geno1 != geno2:
             rejects['hybrid'] += 1
             continue
 
@@ -182,7 +181,6 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
         if geno1 not in counts:
             counts.update({geno1: 0})
         counts[geno1] += 1
-        total_count += 1
 
 
     # output results
@@ -191,7 +189,7 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
 
     bowtie2_iter.close()
 
-    return counts, rejects, mapqs
+    return counts, rejects
 
 
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
@@ -222,7 +220,7 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     #runname,sample,snum,subtype,count,total,perc
     outpath.write('subtype,count,total,perc\n')
 
-    counts, discards, mapqs = do_map(
+    counts, discards = do_map(
         fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
         min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score, cache=cache
     )
@@ -238,11 +236,3 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
     # record number of reads that failed to map
     disc_perc = 0 if not total_count else n_discard*100/float(total_count)
     outpath.write(',%d,%d,%.4g\n' % (n_discard, total_count, disc_perc))
-
-    # If mapq_outfile is specified, write the mapping quality information out to it.
-    if mapq_outfile:
-        mapq_csv_writer = csv.writer(mapq_outfile)
-        mapq_csv_writer.writerow(("qname", "flag", "mapq"))
-        for qname, flag in mapqs:
-            mapq_csv_writer.writerow((qname, flag, mapqs[(qname, flag)]))
-

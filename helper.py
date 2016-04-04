@@ -124,9 +124,6 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     short reads to HCV genotypes/subtypes.
 
     """
-    # get size of FASTQ
-    progress = 0
-    nrecords = 0
 
     # collect SAM output by refname
     counts = {}
@@ -151,10 +148,11 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
             rejects['unknown'] += 1
             continue
 
-        # ignore reads whose mate mapped to a different genotype
-        geno1 = rname.split('-')[1][0] if '-' in rname else ''
-        geno2 = rname2.split('-')[1][0] if '-' in rname2 else ''
-        if geno1 != geno2:
+        # ignore reads whose mate mapped to a different subtype
+        subtype1 = rname.split('-')[1] if '-' in rname else ''
+        subtype2 = rname2.split('-')[1] if '-' in rname2 else ''
+        if subtype1 != subtype2:
+            # genotypes do not match
             rejects['hybrid'] += 1
             continue
 
@@ -178,14 +176,9 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
         #    continue
 
         # update counts
-        if geno1 not in counts:
-            counts.update({geno1: 0})
-        counts[geno1] += 1
-
-
-    # output results
-    keys = counts.keys()
-    keys.sort()
+        if subtype1 not in counts:
+            counts.update({subtype1: 0})
+        counts[subtype1] += 1
 
     bowtie2_iter.close()
 

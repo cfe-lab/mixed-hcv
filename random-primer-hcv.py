@@ -10,11 +10,9 @@ FASTQ files as its inputs.
 import argparse
 import helper
 
-#BOWTIE2_VERSION = "2.2.1"
-BOWTIE2_VERSION = "2.2.3"
+BOWTIE2_VERSION = "2.2.1"
 
-#BOWTIE_INDEX = 'gb-ref_hg38.fa'  # gb-ref+hg38_v2
-BOWTIE_INDEX = 'data/gb-ref+hg38_v2'
+BOWTIE_INDEX = 'data/gb-ref_hg38.fa'  # gb-ref+hg38_v2
 BOWTIE_THREADS = 4
 MIN_MATCH_LEN = 100
 MIN_MAP_QUALITY = 0

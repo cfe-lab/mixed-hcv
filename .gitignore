@@ -1,5 +1,9 @@
 # big data files
-/data/gb-ref+hg38_v2*
+/data/gb-ref_hg38*
+
+# working files
+/r1.fastq*
+/r2.fastq*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

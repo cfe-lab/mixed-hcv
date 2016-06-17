@@ -6,14 +6,12 @@ sample (paired FASTQ files) by mapping short reads to a library
 of reference genomes.
 """
 
+from errno import ENOENT
 import os
-import subprocess
 import re
+import subprocess
+
 import bowtie2
-import csv
-import shutil
-from datetime import datetime
-import errno
 
 cigar_re = re.compile('[0-9]+[MIDNSHPX=]')  # CIGAR token
 
@@ -185,8 +183,37 @@ def do_map(fastq1, fastq2, refpath, bowtie_threads, min_match_len, min_mapq, min
     return counts, rejects
 
 
+def _create_link(fastq, link_root):
+    """ Create a symbolic link to a FASTQ file with the right extension.
+
+    bowtie2 decides whether to unzip a FASTQ file based on its file name
+    extension. Kive will copy raw FASTQ and compressed FASTQ with the .RAW
+    extension, so we need to figure out which we've received. Then create
+    a symbolic link with the correct extension to pass to bowtie2.
+    :param str fastq: path to a FASTQ file that is text or gzipped
+    :param str link_root: root of the path where the symbolic link will be
+        created. It will have an extension added to it.
+    :return: the path to the new symbolic link
+    """
+    with open(fastq, 'rb') as f:
+        # Check the header for the Gzip magic number.
+        # See gzip.GzipFile._read_zip_header().
+        magic = f.read(2)
+    extension = '.fastq.gz' if magic == '\037\213' else '.fastq'
+    link_path = link_root + extension
+    try:
+        os.remove(link_path)
+    except OSError as ex:
+        if ex.errno == ENOENT:
+            pass  # The file didn't exist, nothing to remove.
+        else:
+            raise
+    os.symlink(fastq, link_path)
+    return link_path
+
+
 def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
-              min_match_len=100, min_mapq=0, min_score=0, n_threads=4, 
+              min_match_len=100, min_mapq=0, min_score=0, n_threads=4,
               mapq_outfile=None, cache=None):
     """
     Calls do_map and handles writing to output file
@@ -209,18 +236,26 @@ def mixed_hcv(fastq1, fastq2, outpath, refpath, bowtie2_version,
         # generate index files
         bowtie2.build(bowtie2_version, refpath)
 
+    fastq1_link = _create_link(fastq1, 'r1')
+    fastq2_link = _create_link(fastq2, 'r2')
+
     # new output file
-    #runname,sample,snum,subtype,count,total,perc
+    # runname,sample,snum,subtype,count,total,perc
     outpath.write('subtype,count,total,perc\n')
 
-    counts, discards = do_map(
-        fastq1, fastq2, refpath=refpath, bowtie_threads=n_threads, bowtie2_version=bowtie2_version,
-        min_match_len=min_match_len, min_mapq=min_mapq, min_score=min_score, cache=cache
-    )
+    counts, discards = do_map(fastq1_link,
+                              fastq2_link,
+                              refpath=refpath,
+                              bowtie_threads=n_threads,
+                              bowtie2_version=bowtie2_version,
+                              min_match_len=min_match_len,
+                              min_mapq=min_mapq,
+                              min_score=min_score,
+                              cache=cache)
     n_discard = sum(discards.values())
     total_count = sum(counts.values()) + n_discard
 
-    #runname, sample, snum, subtype, count, total_count, perc)
+    # runname, sample, snum, subtype, count, total_count, perc)
 
     for subtype, count in counts.iteritems():
         perc = 0 if not total_count else count*100/float(total_count)

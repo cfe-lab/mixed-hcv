@@ -4,6 +4,7 @@ Wrapper script for bowtie2-align and bowtie2-build with version control
 import subprocess
 from itertools import izip_longest
 
+
 def build(version, fasta):
     """
     Construct bowtie2 indices (.bt2 files)
@@ -51,8 +52,9 @@ def align_paired(version, refpath, fastq1, fastq2, nthreads, flags=('--quiet', '
         yield line, line2
 
     # exception handling
-    if p2.returncode:
-        raise subprocess.CalledProcessError(p2.returncode, bowtie_args)
+    return_code = p2.wait()
+    if return_code:
+        raise subprocess.CalledProcessError(return_code, bowtie_args)
 
 
 def main():

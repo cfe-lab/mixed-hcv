@@ -70,8 +70,9 @@ def merge_by_ref_gene(input_file, output_file):
             curr_conseq_aa = ""
             curr_conseq_count = -1
             for amino_acid in amino_acids.aminos:
-                if row[amino_acid] > curr_conseq_count:
-                    curr_conseq_count = row[amino_acid]
+                curr_aa_count = int(row[amino_acid])
+                if curr_aa_count > curr_conseq_count:
+                    curr_conseq_count = curr_aa_count
                     curr_conseq_aa = amino_acid
 
             assert(curr_conseq_count > 0)
@@ -137,7 +138,8 @@ def merge_by_ref_gene(input_file, output_file):
     # gene, ref.pos, A, C, D, ...
     output_csv = csv.DictWriter(
         output_file,
-        fieldnames=["gene", "ref.pos"] + amino_acids.aminos
+        fieldnames=["gene", "ref.pos"] + amino_acids.aminos,
+        lineterminator=os.linesep
     )
     output_csv.writeheader()
 

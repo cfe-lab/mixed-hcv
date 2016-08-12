@@ -15,7 +15,7 @@ from csv import DictReader
 from amino_acids import aminos
 
 
-def aln2aafreq(aligned_csv, amino_csv, targets=('NS3', 'NS5a', 'NS5b'), coords_file='gb_ref2.coords'):
+def aln2aafreq(aligned_csv, amino_csv, targets=('NS3', 'NS5a', 'NS5b'), coords_file='data/gb-ref2.coords'):
     # load gene coordinates (0-index as per Python's str.index())
     gene_coords = {}
     with open(coords_file, 'rU') as f:

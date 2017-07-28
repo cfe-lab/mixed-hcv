@@ -26,6 +26,9 @@ import re
 import sys
 
 #from micall.settings import max_prop_N, read_mapping_cutoff, sam2aln_q_cutoffs
+
+from big_counter import BigCounter
+
 max_prop_N = 0.2
 read_mapping_cutoff = 0
 sam2aln_q_cutoffs = [15]
@@ -337,6 +340,20 @@ def parse_sam_in_threads(remap_csv, nthreads):
         pool.close()
         pool.join()
 
+
+class CounterFactory:
+    def __init__(self, aligned_file):
+        self.aligned_file_name = getattr(aligned_file, 'name', None)
+
+    def create_counter(self):
+        if self.aligned_file_name is None:
+            return collections.Counter()
+        dirname = os.path.dirname(self.aligned_file_name)
+        file_prefix = os.path.join(os.path.abspath(dirname),
+                                   'merged_seq_counts')
+        return BigCounter(file_prefix=file_prefix)
+
+
 def sam2aln(remap_csv, aligned_csv, insert_csv, failed_csv, nthreads=None):
     # prepare outputs
     insert_fields =  ['qname', 'fwd_rev', 'refname', 'pos', 'insert', 'qual']
@@ -347,20 +364,22 @@ def sam2aln(remap_csv, aligned_csv, insert_csv, failed_csv, nthreads=None):
     failed_writer = DictWriter(failed_csv, failed_fields, lineterminator=os.linesep)
     failed_writer.writeheader()
 
-    empty_region = collections.defaultdict(collections.Counter)
-    aligned = collections.defaultdict(empty_region.copy)
+    counter_factory = CounterFactory(aligned_csv)
+    # We use a funky compound key, so that the BigCounter can write the keys
+    # out to a CSV file. Counting separately for each region used hundreds
+    # of counters.
+    # aligned = {qcut: {region + '\t' + mseq: count}}
+    aligned = collections.defaultdict(counter_factory.create_counter)
     if nthreads:
         iter = parse_sam_in_threads(remap_csv, nthreads)
     else:
         iter = itertools.imap(parse_sam, matchmaker(remap_csv))
 
     for rname, mseqs, insert_list, failed_list in iter:
-        region = aligned[rname]
-
         for qcut, mseq in mseqs.iteritems():
             # collect identical merged sequences
-            mseq_counter = region[qcut]
-            mseq_counter[mseq] += 1
+            mseq_counter = aligned[qcut]
+            mseq_counter[rname + '\t' + mseq] += 1
 
         # write out inserts to CSV
         insert_writer.writerows(insert_list)
@@ -372,19 +391,23 @@ def sam2aln(remap_csv, aligned_csv, insert_csv, failed_csv, nthreads=None):
     aligned_fields = ['refname', 'qcut', 'rank', 'count', 'offset', 'seq']
     aligned_writer = DictWriter(aligned_csv, aligned_fields, lineterminator=os.linesep)
     aligned_writer.writeheader()
-    for rname, data in aligned.iteritems():
-        for qcut, data2 in data.iteritems():
-            # sort variants by count
-            intermed = [(count, len_gap_prefix(s), s) for s, count in data2.iteritems()]
-            intermed.sort(reverse=True)
-            for rank, (count, offset, seq) in enumerate(intermed):
-                aligned_writer.writerow(dict(refname=rname,
-                                             qcut=qcut,
-                                             rank=rank,
-                                             count=count,
-                                             offset=offset,
-                                             seq=seq.strip('-')))
-
+    prev_rname = None
+    rank = 0
+    # for rname, region in sorted(aligned.iteritems()):
+    for qcut, mseq_counter in aligned.iteritems():
+        for key, count in mseq_counter.iteritems():
+            rname, seq = key.split('\t')
+            if rname != prev_rname:
+                rank = 0
+                prev_rname = rname
+            else:
+                rank += 1
+            aligned_writer.writerow(dict(refname=rname,
+                                         qcut=qcut,
+                                         rank=rank,
+                                         count=count,
+                                         offset=len_gap_prefix(seq),
+                                         seq=seq.strip('-')))
 
 
 def main():

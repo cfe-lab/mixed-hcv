@@ -1,5 +1,6 @@
 mixed-hcv
 =========
+[![DOI](https://zenodo.org/badge/29322913.svg)](https://zenodo.org/badge/latestdoi/29322913)
 
 **mixed-hcv** is a bioinformatic pipeline implemented in Python that is designed to detect and quantify the presence of multiple hepatitis C virus (HCV) genotypes in Illumina MiSeq reads derived from a sample of HCV RNA.
 
